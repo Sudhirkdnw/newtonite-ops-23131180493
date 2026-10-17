@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { workItemsService } from './work-items.service';
 import { authenticate } from '../../middleware/authenticate';
+import { idempotencyMiddleware } from '../../middleware/idempotency';
 import { validateRequest } from '../../shared/validation/validate';
 import { sendSuccess } from '../../shared/http/response';
 import {
@@ -16,9 +17,10 @@ export const workItemsRouter = Router();
 // All work-item endpoints require authentication
 workItemsRouter.use(authenticate);
 
-// 1. POST /api/v1/items — create a work item
+// 1. POST /api/v1/items — create a work item with idempotency support
 workItemsRouter.post(
   '/',
+  idempotencyMiddleware,
   validateRequest({ body: CreateWorkItemSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -60,7 +62,7 @@ workItemsRouter.get('/:id', async (req: Request, res: Response, next: NextFuncti
   }
 });
 
-// 4. PATCH /api/v1/items/:id — update permitted fields
+// 4. PATCH /api/v1/items/:id — update permitted fields with optimistic locking
 workItemsRouter.patch(
   '/:id',
   validateRequest({ body: UpdateWorkItemSchema }),
@@ -74,19 +76,24 @@ workItemsRouter.patch(
   }
 );
 
-// 5. POST /api/v1/items/:id/claim — claim an unassigned item
-workItemsRouter.post('/:id/claim', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const item = await workItemsService.claimItem(req.user!, req.params.id as string);
-    return sendSuccess(res, item, 200);
-  } catch (error) {
-    next(error);
+// 5. POST /api/v1/items/:id/claim — claim an unassigned item (atomic conditional update)
+workItemsRouter.post(
+  '/:id/claim',
+  idempotencyMiddleware,
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const item = await workItemsService.claimItem(req.user!, req.params.id as string);
+      return sendSuccess(res, item, 200);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 // 6. POST /api/v1/items/:id/transition — transition through workflow
 workItemsRouter.post(
   '/:id/transition',
+  idempotencyMiddleware,
   validateRequest({ body: TransitionWorkItemSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

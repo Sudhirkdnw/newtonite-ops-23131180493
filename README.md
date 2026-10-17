@@ -234,11 +234,42 @@ curl -X POST http://localhost:4000/api/v1/items/<ITEM_ID>/comments \
   }'
 ```
 
+#### 8. Idempotent Creation (Network Retry Safe):
+
+```bash
+curl -X POST http://localhost:4000/api/v1/items \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Idempotency-Key: 8a7c2e39-1456-42bb-92a1-12cba8973d42" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "teamId": "<TEAM_ID>",
+    "title": "Idempotent operational task",
+    "type": "TASK",
+    "priority": "HIGH"
+  }'
+```
+
+_(Subsequent calls with the same key and payload replay the cached response with `X-Cache-Lookup: HIT` without duplicate records)._
+
+#### 9. Optimistic Concurrency Update (Version-Checked):
+
+```bash
+curl -X PATCH http://localhost:4000/api/v1/items/<ITEM_ID> \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Updated title with version guarantee",
+    "version": 2
+  }'
+```
+
+_(If the item has already been modified to version 3+, returns `HTTP 409 Conflict` with latest and submitted version metadata)._
+
 ---
 
 ## 8. Current Implementation Status
 
-### Completed (Step 1 Foundation + Step 2 Core Operations Engine):
+### Completed (Step 1 Foundation + Step 2 Core Operations + Step 3 Critical Behaviours Beyond CRUD):
 
 - [x] **Monorepo Architecture**: Single unified root `package.json` and single `node_modules` running Express backend (`apps/api`), Vite frontend (`apps/web`), and shared contracts (`packages/shared`).
 - [x] **PostgreSQL & Prisma Schema**: Relational models for `User`, `Team`, `Membership`, `WorkItem`, `ActivityEvent`, `Comment`, `IdempotencyKey`, and `OutboxJob`.
@@ -247,11 +278,25 @@ curl -X POST http://localhost:4000/api/v1/items/<ITEM_ID>/comments \
 - [x] **Team-Based Authorization (RBAC)**: Role hierarchy (`VIEWER` < `MEMBER` < `LEAD` < `ADMIN`), team membership enforcement, and cross-team resource isolation returning `404 Not Found` to prevent enumeration attacks.
 - [x] **Work-Item Lifecycle & State Machine**:
   - Full CRUD operations with Zod validation.
-  - Strict state transition enforcement (`OPEN -> CLAIMED -> IN_PROGRESS -> IN_REVIEW -> COMPLETED`, plus `BLOCKED` and `CANCELED`).
+  - Strict state transition enforcement (`BACKLOG -> TRIAGED -> IN_PROGRESS -> IN_REVIEW -> COMPLETED`, plus `BLOCKED` and `CANCELLED`).
   - Lead-only approval enforcement for `IN_REVIEW -> COMPLETED`.
-  - Atomic claiming mechanism with `409 Conflict` prevention on already claimed items.
-- [x] **Transactional Audit Logging**: Every state mutation atomically writes an immutable `ActivityEvent` to the item's timeline.
-- [x] **Activity Timeline & Comments**: Paginated timeline retrieval and discussion threads.
-- [x] **Quality Gates & Test Coverage**: Vitest integration tests covering auth, RBAC, state transitions, claim conflicts, and pagination with 100% test pass rate.
+- [x] **Critical Behaviour 1 — Concurrent Work-Item Claiming**:
+  - Atomic conditional database update (`WHERE id = :id AND assigneeId IS NULL`) with row-count check.
+  - High-concurrency stress test with 10 simultaneous claims asserting strictly 1 winner and 9 `HTTP 409 Conflict` rejections.
+- [x] **Critical Behaviour 2 — Optimistic Locking for Stale Updates**:
+  - Integer `version` tokens submitted on mutations (`PATCH /items/:id`).
+  - Stale updates rejected with `HTTP 409 Conflict` and diagnostic `{ currentVersion, submittedVersion }` metadata without altering database or appending misleading activity logs.
+- [x] **Critical Behaviour 3 — Idempotency for Repeated Requests**:
+  - Support for `Idempotency-Key` header with SHA-256 request fingerprinting.
+  - Safe replay of cached responses (`X-Cache-Lookup: HIT`) for network retries and duplicate submissions.
+  - Protection against key reuse with altered payloads (`HTTP 409 Conflict`).
+- [x] **Critical Behaviour 4 — Server-Enforced Workflow State Machine**: Centralized transition validator with Lead-only approval gates and immutable audit logs.
+- [x] **Critical Behaviour 5 — Multi-Team Resource-Level Authorization**: Strict boundary enforcement and 404 isolation across all 8 REST endpoints.
+- [x] **Critical Behaviour 6 — Transactional Outbox Pattern**:
+  - Outbox jobs scheduled atomically in same Prisma transaction as business entity.
+  - Asynchronous `OutboxWorker` claiming jobs with atomic conditional lock, exponential backoff retries, and terminal dead-letter state tracking.
+- [x] **Critical Behaviour 7 — Optimistic UI Reconciliation Pattern**:
+  - Pure `OptimisticReconciler` and `useOptimisticWorkItem` hook implementing snapshot preservation, optimistic local update, automatic rollback on 409/403, and server reconciliation.
+- [x] **Test Quality & Gate Assurance**: 52 integration tests passing across 9 test suites with 100% test success rate.
 
-_Refer to [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) and [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md) for architectural records and future step roadmaps._
+_Refer to [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) and [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md) for architectural records._

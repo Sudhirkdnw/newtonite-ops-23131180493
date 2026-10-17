@@ -221,3 +221,107 @@ Apply a strict multi-tenant boundary policy:
 
 - _Pros_: Total elimination of ID enumeration / oracle attacks across functional teams; secure-by-default behavior.
 - _Cons_: Developers debugging client requests on mismatched IDs must verify their active team memberships.
+
+---
+
+## ADR 010: Atomic Conditional Work-Item Claiming
+
+### Context
+
+In high-stress operations, multiple responders often attempt to claim the same critical incident or task at the exact same millisecond. Traditional `read-then-write` logic (`if (!item.assigneeId) update(...)`) is vulnerable to race conditions where two simultaneous requests both observe an unassigned state and overwrite each other.
+
+### Decision
+
+Implement atomic conditional database updates directly inside a Prisma interactive transaction:
+
+```sql
+UPDATE "WorkItem"
+SET "assigneeId" = :userId, "status" = 'IN_PROGRESS', "version" = "version" + 1
+WHERE "id" = :itemId AND "assigneeId" IS NULL;
+```
+
+Check the affected row count:
+
+- If `count === 1`: The caller won the atomic race. Emit `ActivityEvent` (`CLAIMED`) and schedule an `OutboxJob` within the same transaction.
+- If `count === 0`: The item was claimed concurrently by another operator. Fetch the winner's identity and return `HTTP 409 Conflict` with diagnostic metadata (`claimedBy`, `claimedAt`).
+
+### Trade-offs
+
+- _Pros_: Zero deadlock potential, single round-trip atomicity, mathematical guarantee of exactly one assignee under high concurrent load.
+- _Cons_: Requires callers to handle HTTP 409 and refresh their local workboard.
+
+---
+
+## ADR 011: Optimistic Concurrency Control via Version Tokens
+
+### Context
+
+Concurrent edits by multiple operators on the same work item (e.g. updating description, priority, or tags) can cause the "lost update" anomaly, where Operator B silently overwrites changes just submitted by Operator A.
+
+### Decision
+
+Implement integer version-based optimistic locking on `PATCH /api/v1/items/:id`:
+
+1. Every `WorkItem` contains an integer `version` field (initialized at 1).
+2. Clients submit their known `version` alongside mutation fields.
+3. The server updates conditionally:
+
+```sql
+UPDATE "WorkItem"
+SET ..., "version" = "version" + 1
+WHERE "id" = :itemId AND "version" = :submittedVersion;
+```
+
+4. If `count === 0`, the server aborts the transaction, queries the latest server version, and returns `HTTP 409 Conflict` with `{ currentVersion, submittedVersion }`. No activity events or outbox jobs are written.
+
+### Trade-offs
+
+- _Pros_: Prevents silent data corruption without expensive database row locks; completely non-blocking for read-heavy operational dashboards.
+- _Cons_: Stale clients must reconcile their local state before re-applying changes.
+
+---
+
+## ADR 012: Idempotent Mutation Engine via Request Fingerprinting
+
+### Context
+
+Network disconnects, automated retries, and double-clicks by frantic operators can produce duplicate work items or redundant operations.
+
+### Decision
+
+Implement an express middleware supporting standard `Idempotency-Key` headers:
+
+1. Fingerprint calculation: Deterministic SHA-256 hash of `HTTP Method + Path + Request Body + User ID`.
+2. Atomic record reservation in PostgreSQL (`IdempotencyKey` table) with status `PROCESSING`.
+3. If duplicate request arrives while `PROCESSING`: Return `HTTP 409 Conflict` to prevent simultaneous execution races.
+4. If key is reused with a **different payload**: Reject with `HTTP 409 Conflict` ("Idempotency key was previously used with a different request payload").
+5. When the request resolves (`< 400`): Cache status code and response body; replay cached response with `X-Cache-Lookup: HIT` on identical future retries.
+6. If the request fails (`>= 400`): Clean up the key to allow safe retries.
+
+### Trade-offs
+
+- _Pros_: Guarantees exactly-once semantics for item creation; protects database from retry storms.
+- _Cons_: Requires periodic cleanup of expired idempotency keys (TTL-based index).
+
+---
+
+## ADR 013: Reliable Asynchronous Event Dispatching via Transactional Outbox
+
+### Context
+
+When work items are created, claimed, or transitioned, external side effects (e.g. webhook notifications, Slack alerts, audit sync) must be executed reliably. Firing network calls directly inside API handlers risks partial failure (e.g. database commits, but notification fails or crashes the process).
+
+### Decision
+
+Implement the **Transactional Outbox Pattern**:
+
+1. Within the exact same database transaction that modifies the `WorkItem` and appends the `ActivityEvent`, insert an `OutboxJob` row (`PENDING`).
+2. An asynchronous `OutboxWorker` polls and claims pending jobs using atomic conditional updates (`status: PROCESSING`, `attempts: increment`).
+3. Failed jobs undergo exponential backoff retry (`1s, 2s, 4s, 8s...` up to `60s`) until `maxAttempts` (default 5).
+4. Permanent failures are marked `FAILED` with diagnostics preserved.
+5. Crashed workers leave jobs in `PROCESSING`; the worker automatically reclaims jobs stuck in `PROCESSING` older than 5 minutes.
+
+### Trade-offs
+
+- _Pros_: 100% transactional consistency between database mutations and dispatched asynchronous events; zero external message queue dependencies (pure PostgreSQL).
+- _Cons_: Slightly higher write amplification (one extra row inserted per business mutation).

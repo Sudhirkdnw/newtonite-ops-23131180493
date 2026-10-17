@@ -113,7 +113,7 @@ export interface ApiResponseError {
     code: string;
     statusCode: number;
     requestId?: string;
-    details?: ApiErrorDetail[];
+    details?: unknown;
   };
 }
 
@@ -230,10 +230,22 @@ export const UpdateWorkItemSchema = z
       .nullable()
       .optional(),
     assigneeId: z.string().uuid({ message: 'Invalid assignee ID' }).nullable().optional(),
+    version: z
+      .number()
+      .int({ message: 'Version must be an integer' })
+      .positive({ message: 'Version must be a positive integer' })
+      .optional(),
   })
-  .refine((data) => Object.keys(data).length > 0, {
-    message: 'At least one field must be provided for update',
-  });
+  .refine(
+    (data) => {
+      const { version: _v, ...rest } = data;
+      return Object.keys(rest).length > 0;
+    },
+    {
+      message:
+        'At least one mutable field (title, description, priority, dueDate, assigneeId) must be provided for update',
+    }
+  );
 export type UpdateWorkItemInput = z.infer<typeof UpdateWorkItemSchema>;
 
 export const TransitionWorkItemSchema = z.object({

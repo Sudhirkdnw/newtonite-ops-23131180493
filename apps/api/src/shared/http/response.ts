@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import type { ApiResponseSuccess, ApiResponseError, ApiErrorDetail } from '@newtonite/shared';
+import type { ApiResponseSuccess, ApiResponseError } from '@newtonite/shared';
 
 export function sendSuccess<T>(
   res: Response,
@@ -23,7 +23,7 @@ export function sendError(
   message: string,
   statusCode = 500,
   errorCode = 'INTERNAL_SERVER_ERROR',
-  details?: ApiErrorDetail[]
+  details?: unknown
 ): Response {
   const payload: ApiResponseError = {
     success: false,

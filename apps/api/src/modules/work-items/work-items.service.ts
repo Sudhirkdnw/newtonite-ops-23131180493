@@ -22,6 +22,7 @@ import {
 import type { AuthenticatedUser } from '../../middleware/authenticate';
 import { getUserRoleInTeam, hasMinimumRole } from '../../middleware/authorize';
 import type { Prisma } from '@prisma/client';
+import { outboxService } from '../outbox/outbox.service';
 
 export class WorkItemsService {
   /**
@@ -298,6 +299,20 @@ export class WorkItemsService {
         },
       });
 
+      await outboxService.scheduleJob(tx, {
+        aggregateType: 'WORK_ITEM',
+        aggregateId: item.id,
+        eventType: 'WORK_ITEM_CREATED',
+        payload: {
+          id: item.id,
+          title: item.title,
+          teamId: item.teamId,
+          creatorId: user.id,
+          status: item.status,
+          version: item.version,
+        },
+      });
+
       return item;
     });
 
@@ -379,20 +394,58 @@ export class WorkItemsService {
       newState.assigneeId = input.assigneeId;
     }
 
-    // Atomic transaction: update item version + append activity event
+    // Atomic transaction: update item version + append activity event + outbox job
     const updated = await prisma.$transaction(async (tx) => {
-      const res = await tx.workItem.update({
+      if (input.version !== undefined) {
+        const updateResult = await tx.workItem.updateMany({
+          where: {
+            id: itemId,
+            version: input.version,
+          },
+          data: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.priority !== undefined ? { priority: input.priority } : {}),
+            ...(input.dueDate !== undefined
+              ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
+              : {}),
+            ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
+            version: { increment: 1 },
+          },
+        });
+
+        if (updateResult.count === 0) {
+          const latest = await tx.workItem.findUnique({
+            where: { id: itemId },
+            select: { version: true, updatedAt: true, title: true, status: true },
+          });
+          throw new ConflictError(
+            `Stale update rejected: Work item has been modified by another user (current version: ${latest?.version}, submitted: ${input.version})`,
+            {
+              currentVersion: latest?.version,
+              submittedVersion: input.version,
+              updatedAt: latest?.updatedAt?.toISOString(),
+            }
+          );
+        }
+      } else {
+        await tx.workItem.update({
+          where: { id: itemId },
+          data: {
+            ...(input.title !== undefined ? { title: input.title } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.priority !== undefined ? { priority: input.priority } : {}),
+            ...(input.dueDate !== undefined
+              ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
+              : {}),
+            ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
+            version: { increment: 1 },
+          },
+        });
+      }
+
+      const res = await tx.workItem.findUniqueOrThrow({
         where: { id: itemId },
-        data: {
-          ...(input.title !== undefined ? { title: input.title } : {}),
-          ...(input.description !== undefined ? { description: input.description } : {}),
-          ...(input.priority !== undefined ? { priority: input.priority } : {}),
-          ...(input.dueDate !== undefined
-            ? { dueDate: input.dueDate ? new Date(input.dueDate) : null }
-            : {}),
-          ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
-          version: { increment: 1 },
-        },
         include: {
           team: { select: { name: true } },
           assignee: { select: { name: true } },
@@ -414,6 +467,18 @@ export class WorkItemsService {
           action,
           previousState: previousState as Prisma.InputJsonValue,
           newState: newState as Prisma.InputJsonValue,
+        },
+      });
+
+      await outboxService.scheduleJob(tx, {
+        aggregateType: 'WORK_ITEM',
+        aggregateId: itemId,
+        eventType: 'WORK_ITEM_UPDATED',
+        payload: {
+          id: itemId,
+          version: res.version,
+          previousState,
+          newState,
         },
       });
 
@@ -445,33 +510,72 @@ export class WorkItemsService {
    * Claim an unassigned work item
    */
   async claimItem(user: AuthenticatedUser, itemId: string): Promise<WorkItemSummaryDTO> {
-    const { item, userRole } = await this.getAccessibleItemOrThrow(user, itemId);
+    const { userRole } = await this.getAccessibleItemOrThrow(user, itemId);
 
     if (!hasMinimumRole(userRole, TeamRole.MEMBER)) {
       throw new ForbiddenError('Viewers do not have permission to claim work items');
     }
 
-    // Check if already claimed by someone else
-    if (item.assigneeId !== null && item.assigneeId !== user.id) {
-      throw new ConflictError(
-        `Work item is already claimed by ${item.assignee?.name || 'another team member'}`
-      );
-    }
-
-    // Atomic transaction: assign to caller + auto transition to IN_PROGRESS if in BACKLOG/TRIAGED
+    // Atomic transaction: assign to caller using conditional update to prevent race conditions
     const updated = await prisma.$transaction(async (tx) => {
-      const nextStatus =
-        item.status === WorkItemStatus.BACKLOG || item.status === WorkItemStatus.TRIAGED
-          ? WorkItemStatus.IN_PROGRESS
-          : item.status;
-
-      const res = await tx.workItem.update({
+      // 1. Fetch fresh snapshot inside transaction
+      const current = await tx.workItem.findUniqueOrThrow({
         where: { id: itemId },
+        include: {
+          assignee: { select: { id: true, name: true } },
+        },
+      });
+
+      if (current.assigneeId !== null) {
+        throw new ConflictError(
+          `Work item is already claimed by ${current.assignee?.name || (current.assigneeId === user.id ? 'you' : 'another team member')}`,
+          {
+            claimedBy: current.assignee?.name,
+            claimedById: current.assigneeId,
+            currentVersion: current.version,
+            currentStatus: current.status,
+          }
+        );
+      }
+
+      const nextStatus =
+        current.status === WorkItemStatus.BACKLOG || current.status === WorkItemStatus.TRIAGED
+          ? WorkItemStatus.IN_PROGRESS
+          : current.status;
+
+      // 2. Atomic conditional update: update ONLY IF assigneeId is still null
+      const claimResult = await tx.workItem.updateMany({
+        where: {
+          id: itemId,
+          assigneeId: null, // Critical condition: ensure unassigned
+        },
         data: {
           assigneeId: user.id,
           status: nextStatus,
           version: { increment: 1 },
         },
+      });
+
+      // 3. If affected row count is 0, another concurrent request claimed it first!
+      if (claimResult.count === 0) {
+        const raceWinner = await tx.workItem.findUnique({
+          where: { id: itemId },
+          include: { assignee: { select: { id: true, name: true } } },
+        });
+
+        throw new ConflictError(
+          `Work item is already claimed by ${raceWinner?.assignee?.name || 'another team member'}`,
+          {
+            claimedBy: raceWinner?.assignee?.name,
+            claimedById: raceWinner?.assigneeId,
+            currentVersion: raceWinner?.version,
+            currentStatus: raceWinner?.status,
+          }
+        );
+      }
+
+      const res = await tx.workItem.findUniqueOrThrow({
+        where: { id: itemId },
         include: {
           team: { select: { name: true } },
           assignee: { select: { name: true } },
@@ -485,13 +589,26 @@ export class WorkItemsService {
           actorId: user.id,
           action: ActivityAction.CLAIMED,
           previousState: {
-            assigneeId: item.assigneeId,
-            status: item.status,
+            assigneeId: current.assigneeId,
+            status: current.status,
           },
           newState: {
             assigneeId: user.id,
             status: nextStatus,
           },
+        },
+      });
+
+      await outboxService.scheduleJob(tx, {
+        aggregateType: 'WORK_ITEM',
+        aggregateId: itemId,
+        eventType: 'WORK_ITEM_CLAIMED',
+        payload: {
+          id: itemId,
+          claimedById: user.id,
+          claimedByName: user.name,
+          version: res.version,
+          status: nextStatus,
         },
       });
 
@@ -596,6 +713,20 @@ export class WorkItemsService {
           previousState: { status: currentStatus },
           newState: { status: targetStatus },
           metadata: input.reason ? { reason: input.reason } : undefined,
+        },
+      });
+
+      await outboxService.scheduleJob(tx, {
+        aggregateType: 'WORK_ITEM',
+        aggregateId: itemId,
+        eventType: 'WORK_ITEM_STATUS_CHANGED',
+        payload: {
+          id: itemId,
+          previousStatus: currentStatus,
+          targetStatus,
+          version: res.version,
+          reason: input.reason,
+          isApproval: isApprovalTransition,
         },
       });
 
