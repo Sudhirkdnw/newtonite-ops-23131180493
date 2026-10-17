@@ -10,11 +10,27 @@ interface TransitionModalProps {
 }
 
 const NEXT_STATUS_OPTIONS: Record<WorkItemStatus, WorkItemStatus[]> = {
-  BACKLOG: ['TRIAGED' as WorkItemStatus, 'IN_PROGRESS' as WorkItemStatus, 'CANCELLED' as WorkItemStatus],
-  TRIAGED: ['IN_PROGRESS' as WorkItemStatus, 'BLOCKED' as WorkItemStatus, 'CANCELLED' as WorkItemStatus],
-  IN_PROGRESS: ['IN_REVIEW' as WorkItemStatus, 'BLOCKED' as WorkItemStatus, 'CANCELLED' as WorkItemStatus],
+  BACKLOG: [
+    'TRIAGED' as WorkItemStatus,
+    'IN_PROGRESS' as WorkItemStatus,
+    'CANCELLED' as WorkItemStatus,
+  ],
+  TRIAGED: [
+    'IN_PROGRESS' as WorkItemStatus,
+    'BLOCKED' as WorkItemStatus,
+    'CANCELLED' as WorkItemStatus,
+  ],
+  IN_PROGRESS: [
+    'IN_REVIEW' as WorkItemStatus,
+    'BLOCKED' as WorkItemStatus,
+    'CANCELLED' as WorkItemStatus,
+  ],
   BLOCKED: ['IN_PROGRESS' as WorkItemStatus, 'CANCELLED' as WorkItemStatus],
-  IN_REVIEW: ['COMPLETED' as WorkItemStatus, 'IN_PROGRESS' as WorkItemStatus, 'CANCELLED' as WorkItemStatus],
+  IN_REVIEW: [
+    'COMPLETED' as WorkItemStatus,
+    'IN_PROGRESS' as WorkItemStatus,
+    'CANCELLED' as WorkItemStatus,
+  ],
   COMPLETED: [],
   CANCELLED: [],
 };
@@ -52,7 +68,9 @@ export const TransitionModal: React.FC<TransitionModalProps> = ({
     } catch (err: unknown) {
       const errorObj = err as { message?: string; status?: number };
       if (errorObj.status === 403) {
-        setErrorMsg('Approval Forbidden: Only Leads or Admins can approve items in review to Completed.');
+        setErrorMsg(
+          'Approval Forbidden: Only Leads or Admins can approve items in review to Completed.'
+        );
       } else {
         setErrorMsg(errorObj.message || 'Workflow transition rejected by server.');
       }
@@ -100,7 +118,8 @@ export const TransitionModal: React.FC<TransitionModalProps> = ({
           Transition Workflow State
         </h3>
         <p style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-          Moving "{item.title}" from <strong style={{ color: 'var(--primary-blue)' }}>{item.status}</strong>
+          Moving "{item.title}" from{' '}
+          <strong style={{ color: 'var(--primary-blue)' }}>{item.status}</strong>
         </p>
 
         {errorMsg && (
@@ -124,7 +143,10 @@ export const TransitionModal: React.FC<TransitionModalProps> = ({
             This item is in a terminal state ({item.status}) and cannot be transitioned further.
           </div>
         ) : (
-          <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form
+            onSubmit={(e) => void handleSubmit(e)}
+            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+          >
             <div>
               <label
                 style={{
@@ -166,8 +188,8 @@ export const TransitionModal: React.FC<TransitionModalProps> = ({
                   fontSize: '0.775rem',
                 }}
               >
-                ℹ Notice: Approving an item in review requires Lead or Admin authority. Your current role is{' '}
-                <strong>{userRole || 'MEMBER'}</strong>.
+                ℹ Notice: Approving an item in review requires Lead or Admin authority. Your current
+                role is <strong>{userRole || 'MEMBER'}</strong>.
               </div>
             )}
 
@@ -193,7 +215,14 @@ export const TransitionModal: React.FC<TransitionModalProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '0.75rem',
+                marginTop: '0.5rem',
+              }}
+            >
               <button
                 type="button"
                 onClick={onClose}

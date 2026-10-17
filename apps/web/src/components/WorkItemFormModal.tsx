@@ -12,7 +12,11 @@ interface WorkItemFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmitCreate?: (data: CreateWorkItemInput, idempotencyKey: string) => Promise<void>;
-  onSubmitUpdate?: (itemId: string, patch: UpdateWorkItemInput, idempotencyKey: string) => Promise<void>;
+  onSubmitUpdate?: (
+    itemId: string,
+    patch: UpdateWorkItemInput,
+    idempotencyKey: string
+  ) => Promise<void>;
   initialItem?: WorkItemSummaryDTO | null; // If provided, modal is in Edit mode
   availableTeamMembers?: Array<{ id: string; name: string }>;
 }
@@ -125,7 +129,9 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
     } catch (err: unknown) {
       const errorObj = err as { message?: string; details?: unknown; status?: number };
       if (errorObj.status === 409) {
-        setApiError('Conflict detected: This work item was modified by another user. Please refresh.');
+        setApiError(
+          'Conflict detected: This work item was modified by another user. Please refresh.'
+        );
       } else if (errorObj.status === 403) {
         setApiError('Forbidden: You do not have permission to perform this action.');
       } else {
@@ -166,9 +172,23 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '1.25rem',
+          }}
+        >
           <div>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+            <h2
+              style={{
+                fontSize: '1.2rem',
+                fontWeight: 800,
+                color: 'var(--text-main)',
+                letterSpacing: '-0.02em',
+              }}
+            >
               {isEditMode ? 'Edit Work Item' : 'Create New Work Item'}
             </h2>
             {isEditMode && initialItem && (
@@ -177,7 +197,10 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
               </span>
             )}
           </div>
-          <button onClick={onClose} style={{ fontSize: '1.2rem', color: 'var(--text-subtle)', lineHeight: 1 }}>
+          <button
+            onClick={onClose}
+            style={{ fontSize: '1.2rem', color: 'var(--text-subtle)', lineHeight: 1 }}
+          >
             ✕
           </button>
         </div>
@@ -199,12 +222,21 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form
+          onSubmit={(e) => void handleSubmit(e)}
+          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        >
           {/* Title */}
           <div>
             <label
               htmlFor="field-title"
-              style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+              style={{
+                display: 'block',
+                fontSize: '0.825rem',
+                fontWeight: 700,
+                color: 'var(--text-main)',
+                marginBottom: '0.35rem',
+              }}
             >
               Title *
             </label>
@@ -221,7 +253,14 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
               }}
             />
             {errors.title && (
-              <span style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '0.25rem', display: 'block' }}>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: '#dc2626',
+                  marginTop: '0.25rem',
+                  display: 'block',
+                }}
+              >
                 {errors.title}
               </span>
             )}
@@ -231,7 +270,13 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
           <div>
             <label
               htmlFor="field-description"
-              style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+              style={{
+                display: 'block',
+                fontSize: '0.825rem',
+                fontWeight: 700,
+                color: 'var(--text-main)',
+                marginBottom: '0.35rem',
+              }}
             >
               Description
             </label>
@@ -244,7 +289,14 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
               style={{ width: '100%', resize: 'vertical' }}
             />
             {errors.description && (
-              <span style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '0.25rem', display: 'block' }}>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  color: '#dc2626',
+                  marginTop: '0.25rem',
+                  display: 'block',
+                }}
+              >
                 {errors.description}
               </span>
             )}
@@ -255,7 +307,13 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
             <div>
               <label
                 htmlFor="field-type"
-                style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'block',
+                  fontSize: '0.825rem',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  marginBottom: '0.35rem',
+                }}
               >
                 Work-Item Type
               </label>
@@ -277,7 +335,13 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
             <div>
               <label
                 htmlFor="field-priority"
-                style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'block',
+                  fontSize: '0.825rem',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  marginBottom: '0.35rem',
+                }}
               >
                 Priority Level
               </label>
@@ -301,7 +365,13 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
             <div>
               <label
                 htmlFor="field-team"
-                style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'block',
+                  fontSize: '0.825rem',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  marginBottom: '0.35rem',
+                }}
               >
                 Team *
               </label>
@@ -319,7 +389,14 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
                 ))}
               </select>
               {errors.teamId && (
-                <span style={{ fontSize: '0.75rem', color: '#dc2626', marginTop: '0.25rem', display: 'block' }}>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    color: '#dc2626',
+                    marginTop: '0.25rem',
+                    display: 'block',
+                  }}
+                >
                   {errors.teamId}
                 </span>
               )}
@@ -328,7 +405,13 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
             <div>
               <label
                 htmlFor="field-assignee"
-                style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+                style={{
+                  display: 'block',
+                  fontSize: '0.825rem',
+                  fontWeight: 700,
+                  color: 'var(--text-main)',
+                  marginBottom: '0.35rem',
+                }}
               >
                 Assignee
               </label>
@@ -339,7 +422,9 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
                 style={{ width: '100%' }}
               >
                 <option value="">Unassigned</option>
-                {currentUser && <option value={currentUser.id}>Assign to Me ({currentUser.name})</option>}
+                {currentUser && (
+                  <option value={currentUser.id}>Assign to Me ({currentUser.name})</option>
+                )}
                 {availableTeamMembers
                   .filter((m) => m.id !== currentUser?.id)
                   .map((m) => (
@@ -355,7 +440,13 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
           <div>
             <label
               htmlFor="field-duedate"
-              style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '0.35rem' }}
+              style={{
+                display: 'block',
+                fontSize: '0.825rem',
+                fontWeight: 700,
+                color: 'var(--text-main)',
+                marginBottom: '0.35rem',
+              }}
             >
               Due Date / Target Resolution
             </label>
@@ -369,7 +460,14 @@ export const WorkItemFormModal: React.FC<WorkItemFormModalProps> = ({
           </div>
 
           {/* Form Actions */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.75rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem',
+              marginTop: '0.75rem',
+            }}
+          >
             <button
               type="button"
               onClick={onClose}

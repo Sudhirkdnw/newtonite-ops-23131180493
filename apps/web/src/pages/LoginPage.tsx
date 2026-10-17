@@ -158,7 +158,10 @@ export const LoginPage: React.FC = () => {
         )}
 
         {/* Credentials Form */}
-        <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form
+          onSubmit={(e) => void handleSubmit(e)}
+          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        >
           <div>
             <label
               htmlFor="login-email"
@@ -300,7 +303,9 @@ export const LoginPage: React.FC = () => {
                     {p.role}
                   </span>
                 </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                <div
+                  style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}
+                >
                   {p.desc}
                 </div>
               </div>

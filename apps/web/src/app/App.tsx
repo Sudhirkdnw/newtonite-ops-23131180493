@@ -1,94 +1,65 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import type {
+  WorkItemSummaryDTO,
+  WorkItemStatus,
+  CreateWorkItemInput,
+  UpdateWorkItemInput,
+} from '@newtonite/shared';
 import {
-  loginUser,
-  fetchWorkItems,
   claimWorkItem,
   transitionWorkItem,
   createWorkItem,
-  fetchItemActivity,
-  fetchItemComments,
-  addComment,
+  updateWorkItem,
   fetchReadiness,
-  type UserProfile,
 } from '../services/api';
-import type {
-  WorkItemSummaryDTO,
-  ActivityEventDTO,
-  CommentDTO,
-  WorkItemStatus,
-  Priority,
-  WorkItemType,
-} from '@newtonite/shared';
+import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AppLayout } from '../components/layout/AppLayout';
+import { LoginPage } from '../pages/LoginPage';
+import { DashboardPage } from '../pages/DashboardPage';
+import { WorkItemsPage } from '../pages/WorkItemsPage';
+import { WorkItemDetailPage } from '../pages/WorkItemDetailPage';
+import { WorkItemFormModal } from '../components/WorkItemFormModal';
+import { TransitionModal } from '../components/TransitionModal';
+import { ToastContainer, type ToastMessage } from '../components/ui/Toast';
 
-import { Sidebar } from '../components/Sidebar';
-import { Header } from '../components/Header';
-import { MetricCards } from '../components/MetricCards';
-import { KanbanBoard } from '../components/KanbanBoard';
-import { RightSidebar } from '../components/RightSidebar';
-import { BottomWidgets } from '../components/BottomWidgets';
-import { CreateTaskModal } from '../components/CreateTaskModal';
-import { ItemDrawer } from '../components/ItemDrawer';
+const DashboardAppContent: React.FC = () => {
+  const { token, currentUser, isLoading: isAuthLoading } = useAuth();
 
-export const App: React.FC = () => {
-  // Auth state
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('tasks');
+  // Navigation state
+  const [currentView, setCurrentView] = useState<'dashboard' | 'items' | 'detail'>('dashboard');
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
-  // System status
+  // System Health
   const [systemReady, setSystemReady] = useState<boolean | null>(null);
   const [dbLatency, setDbLatency] = useState<number | undefined>(undefined);
 
-  // Work items state
-  const [items, setItems] = useState<WorkItemSummaryDTO[]>([]);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Toasts
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Toast / Notification
-  const [toast, setToast] = useState<{
-    type: 'success' | 'conflict' | 'forbidden' | 'error';
-    message: string;
-    details?: string;
-  } | null>(null);
+  // Modals state
+  const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<WorkItemSummaryDTO | null>(null);
 
-  // Drawer state (Item details, history, comments)
-  const [activeDrawerItem, setActiveDrawerItem] = useState<WorkItemSummaryDTO | null>(null);
-  const [activityHistory, setActivityHistory] = useState<ActivityEventDTO[]>([]);
-  const [comments, setComments] = useState<CommentDTO[]>([]);
-  const [drawerLoading, setDrawerLoading] = useState<boolean>(false);
+  const [transitioningItem, setTransitioningItem] = useState<WorkItemSummaryDTO | null>(null);
 
-  // Create Task Modal state
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
-  const [createSubmitting, setCreateSubmitting] = useState<boolean>(false);
+  const addToast = useCallback(
+    (type: ToastMessage['type'], message: string, title?: string, details?: string) => {
+      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setToasts((prev) => [...prev, { id, type, message, title, details }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 7000);
+    },
+    []
+  );
 
-  // Auto-clear toast
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
-
-  // Persona switcher handler
-  const handleLoginAs = useCallback(async (email: string) => {
-    try {
-      const auth = await loginUser(email);
-      setToken(auth.token);
-      setCurrentUser(auth.user);
-      setToast({
-        type: 'success',
-        message: `Switched persona to ${auth.user.name} (${auth.user.memberships[0]?.role || 'ADMIN'})`,
-      });
-    } catch (err) {
-      setToast({
-        type: 'error',
-        message: `Login failed: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Poll system health
+  // System health poll
   useEffect(() => {
-    async function checkSys() {
+    async function checkHealth() {
       try {
         const r = await fetchReadiness();
         setSystemReady(r.status === 'ready');
@@ -97,407 +68,247 @@ export const App: React.FC = () => {
         setSystemReady(false);
       }
     }
-    void checkSys();
-    const interval = setInterval(() => void checkSys(), 15000);
+    void checkHealth();
+    const interval = setInterval(() => void checkHealth(), 15000);
     return () => clearInterval(interval);
   }, []);
 
-  // Mount: login as default demo user (Bob Lead)
-  useEffect(() => {
-    void handleLoginAs('bob.lead@newtonite.dev');
-  }, [handleLoginAs]);
+  // Select item to view detail
+  const handleSelectItem = useCallback((item: WorkItemSummaryDTO) => {
+    setSelectedItemId(item.id);
+    setCurrentView('detail');
+  }, []);
 
-  // Load items when token changes
-  const loadItems = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetchWorkItems(token);
-      setItems(res.items);
-    } catch (err) {
-      console.error('Failed to load work items', err);
-    }
-  }, [token]);
+  // Open Create modal
+  const handleOpenCreate = useCallback(() => {
+    setEditingItem(null);
+    setIsFormModalOpen(true);
+  }, []);
 
-  useEffect(() => {
-    if (token) {
-      void loadItems();
-    }
-  }, [token, loadItems]);
+  // Open Edit modal
+  const handleOpenEdit = useCallback((item: WorkItemSummaryDTO) => {
+    setEditingItem(item);
+    setIsFormModalOpen(true);
+  }, []);
 
-  // Filter items by search query
-  const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return items;
-    const q = searchQuery.toLowerCase();
-    return items.filter(
-      (item) =>
-        item.title.toLowerCase().includes(q) ||
-        item.type.toLowerCase().includes(q) ||
-        item.status.toLowerCase().includes(q) ||
-        (item.assigneeName && item.assigneeName.toLowerCase().includes(q))
-    );
-  }, [items, searchQuery]);
+  // Open Transition modal
+  const handleOpenTransition = useCallback((item: WorkItemSummaryDTO) => {
+    setTransitioningItem(item);
+  }, []);
 
-  // Atomic Claim Work-Item with optimistic update & 409 conflict detection
-  const handleClaim = async (item: WorkItemSummaryDTO) => {
-    if (!token || !currentUser) return;
+  // Atomic Claim Handler with optimistic update & 409 conflict detection
+  const handleClaimItem = useCallback(
+    async (item: WorkItemSummaryDTO) => {
+      if (!token || !currentUser) return;
 
-    const previous = [...items];
+      try {
+        const updated = await claimWorkItem(token, item.id);
+        addToast(
+          'success',
+          `Successfully claimed "${updated.title}" (Version v${updated.version})`
+        );
+      } catch (err: unknown) {
+        const errorObj = err as {
+          status?: number;
+          message?: string;
+          details?: { claimedBy?: string; currentVersion?: number };
+        };
 
-    // Optimistically update
-    setItems((curr) =>
-      curr.map((i) =>
-        i.id === item.id
-          ? {
-              ...i,
-              assigneeId: currentUser.id,
-              assigneeName: currentUser.name,
-              status:
-                i.status === 'BACKLOG' || i.status === 'TRIAGED'
-                  ? ('IN_PROGRESS' as WorkItemStatus)
-                  : i.status,
-              version: i.version + 1,
-            }
-          : i
-      )
-    );
-
-    try {
-      const updated = await claimWorkItem(token, item.id);
-      setItems((curr) => curr.map((i) => (i.id === item.id ? updated : i)));
-      if (activeDrawerItem?.id === item.id) {
-        setActiveDrawerItem(updated);
+        if (errorObj.status === 409) {
+          addToast(
+            'conflict',
+            errorObj.message || 'Work item was already claimed by another user.',
+            '409 Conflict: Concurrent Claim Rejected',
+            errorObj.details?.claimedBy
+              ? `Currently assigned to: ${errorObj.details.claimedBy}`
+              : undefined
+          );
+        } else if (errorObj.status === 403) {
+          addToast(
+            'forbidden',
+            'Viewers hold read-only permissions and cannot claim work items.',
+            '403 Forbidden: Action Denied'
+          );
+        } else {
+          addToast('error', errorObj.message || 'Failed to claim work item.');
+        }
+        throw err;
       }
-      setToast({
-        type: 'success',
-        message: `Successfully claimed "${item.title}"`,
-      });
-    } catch (err: unknown) {
-      // Rollback
-      setItems(previous);
-      const errorObj = err as {
-        status?: number;
-        message?: string;
-        details?: { claimedBy?: string };
-      };
+    },
+    [token, currentUser, addToast]
+  );
 
-      if (errorObj.status === 409) {
-        setToast({
-          type: 'conflict',
-          message: `409 Conflict: ${errorObj.message || 'Item was already claimed'}`,
-          details: errorObj.details?.claimedBy
-            ? `Currently assigned to ${errorObj.details.claimedBy}`
-            : undefined,
-        });
-      } else if (errorObj.status === 403) {
-        setToast({
-          type: 'forbidden',
-          message: `403 Forbidden: Viewers do not have permission to claim work items`,
-          details: 'Switch to Evan Member or Bob Lead to claim.',
-        });
-      } else {
-        setToast({
-          type: 'error',
-          message: errorObj.message || 'Failed to claim work item',
-        });
+  // Transition Handler with Lead approval validation
+  const handleConfirmTransition = useCallback(
+    async (itemId: string, targetStatus: WorkItemStatus, reason?: string) => {
+      if (!token) return;
+
+      try {
+        const updated = await transitionWorkItem(token, itemId, targetStatus, reason);
+        addToast(
+          'success',
+          `Status transitioned to ${targetStatus.replace('_', ' ')} (Version v${updated.version})`
+        );
+      } catch (err: unknown) {
+        const errorObj = err as { status?: number; message?: string };
+        if (errorObj.status === 403) {
+          addToast(
+            'forbidden',
+            'Workflow approval requires Lead or Admin authority. Members cannot approve items in review.',
+            '403 Forbidden: Workflow Approval Required'
+          );
+        } else {
+          addToast('error', errorObj.message || 'Transition rejected by workflow state machine.');
+        }
+        throw err;
       }
-    }
-  };
+    },
+    [token, addToast]
+  );
 
-  // State Transition with Lead approval validation (403 check)
-  const handleTransition = async (itemId: string, targetStatus: WorkItemStatus) => {
-    if (!token) return;
+  // Create Work Item Handler
+  const handleCreateSubmit = useCallback(
+    async (data: CreateWorkItemInput, idempotencyKey: string) => {
+      if (!token) return;
 
-    try {
-      const updated = await transitionWorkItem(token, itemId, targetStatus);
-      setItems((curr) => curr.map((i) => (i.id === itemId ? updated : i)));
-      if (activeDrawerItem?.id === itemId) {
-        setActiveDrawerItem(updated);
+      try {
+        const created = await createWorkItem(token, data, idempotencyKey);
+        addToast('success', `Created work item "${created.title}" (v1)`);
+        // Navigate to detail or refresh
+        setSelectedItemId(created.id);
+        setCurrentView('detail');
+      } catch (err: unknown) {
+        const errorObj = err as { status?: number; message?: string };
+        if (errorObj.status === 403) {
+          addToast('forbidden', 'Viewers do not have permission to create work items.');
+        } else {
+          addToast('error', errorObj.message || 'Failed to create work item.');
+        }
+        throw err;
       }
-      setToast({
-        type: 'success',
-        message: `Transitioned status to ${targetStatus.replace('_', ' ')}`,
-      });
-    } catch (err: unknown) {
-      const errorObj = err as { status?: number; message?: string };
-      if (errorObj.status === 403) {
-        setToast({
-          type: 'forbidden',
-          message: `403 Forbidden: Workflow approval requires Lead or Admin role`,
-          details: 'Members cannot complete items in review. Switch to Bob Lead to approve.',
-        });
-      } else {
-        setToast({
-          type: 'error',
-          message: errorObj.message || 'Transition rejected by workflow state machine',
-        });
+    },
+    [token, addToast]
+  );
+
+  // Update Work Item Handler with optimistic concurrency control
+  const handleUpdateSubmit = useCallback(
+    async (itemId: string, patch: UpdateWorkItemInput, idempotencyKey: string) => {
+      if (!token) return;
+
+      try {
+        const updated = await updateWorkItem(token, itemId, patch, idempotencyKey);
+        addToast('success', `Updated "${updated.title}" (v${updated.version})`);
+      } catch (err: unknown) {
+        const errorObj = err as { status?: number; message?: string };
+        if (errorObj.status === 409) {
+          addToast(
+            'conflict',
+            'Stale update rejected: This work item has been modified by another concurrent user. Please refresh.',
+            '409 Conflict: Version Mismatch'
+          );
+        } else if (errorObj.status === 403) {
+          addToast('forbidden', 'You do not have permission to modify this work item.');
+        } else {
+          addToast('error', errorObj.message || 'Failed to update work item.');
+        }
+        throw err;
       }
-    }
-  };
+    },
+    [token, addToast]
+  );
 
-  // Open item drawer
-  const handleOpenDrawer = async (item: WorkItemSummaryDTO) => {
-    setActiveDrawerItem(item);
-    if (!token) return;
-    setDrawerLoading(true);
-    try {
-      const [act, com] = await Promise.all([
-        fetchItemActivity(token, item.id),
-        fetchItemComments(token, item.id),
-      ]);
-      setActivityHistory(act);
-      setComments(com);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setDrawerLoading(false);
-    }
-  };
-
-  // Add Comment inside drawer
-  const handleAddComment = async (body: string) => {
-    if (!token || !activeDrawerItem) return;
-
-    try {
-      const created = await addComment(token, activeDrawerItem.id, body);
-      setComments((curr) => [...curr, created]);
-      setToast({ type: 'success', message: 'Comment posted to item discussion' });
-    } catch (err: unknown) {
-      const errorObj = err as { status?: number; message?: string };
-      if (errorObj.status === 403) {
-        setToast({
-          type: 'forbidden',
-          message: '403 Forbidden: Viewers cannot post comments',
-        });
-      } else {
-        setToast({
-          type: 'error',
-          message: errorObj.message || 'Failed to post comment',
-        });
-      }
-    }
-  };
-
-  // Create Task Submit
-  const handleCreateTask = async (data: {
-    title: string;
-    description?: string;
-    type: WorkItemType;
-    priority: Priority;
-  }) => {
-    if (!token || !currentUser) return;
-
-    const userTeamId = currentUser.memberships[0]?.teamId;
-    if (!userTeamId) {
-      setToast({ type: 'error', message: 'User does not belong to any team' });
-      return;
-    }
-
-    setCreateSubmitting(true);
-    try {
-      const idempKey = `web-create-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const created = await createWorkItem(
-        token,
-        {
-          teamId: userTeamId,
-          title: data.title,
-          description: data.description,
-          type: data.type,
-          priority: data.priority,
-        },
-        idempKey
-      );
-
-      setItems((curr) => [created, ...curr]);
-      setIsCreateModalOpen(false);
-      setToast({
-        type: 'success',
-        message: `Created task "${created.title}" (v1)`,
-      });
-    } catch (err: unknown) {
-      const errorObj = err as { status?: number; message?: string };
-      if (errorObj.status === 403) {
-        setToast({
-          type: 'forbidden',
-          message: '403 Forbidden: Viewers cannot create tasks',
-        });
-      } else {
-        setToast({
-          type: 'error',
-          message: errorObj.message || 'Failed to create task',
-        });
-      }
-    } finally {
-      setCreateSubmitting(false);
-    }
-  };
-
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-page)' }}>
-      {/* Toast Notification Box */}
-      {toast && (
-        <div
-          id="toast-notification"
-          className="animate-fade-in"
-          style={{
-            position: 'fixed',
-            bottom: '2rem',
-            right: '2rem',
-            zIndex: 9999,
-            backgroundColor:
-              toast.type === 'success'
-                ? '#064e3b'
-                : toast.type === 'conflict'
-                  ? '#7c2d12'
-                  : toast.type === 'forbidden'
-                    ? '#701a75'
-                    : '#7f1d1d',
-            border: `1px solid ${
-              toast.type === 'success'
-                ? '#10b981'
-                : toast.type === 'conflict'
-                  ? '#f97316'
-                  : toast.type === 'forbidden'
-                    ? '#d946ef'
-                    : '#ef4444'
-            }`,
-            color: '#fff',
-            padding: '1rem 1.25rem',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-popover)',
-            maxWidth: '420px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              gap: '0.75rem',
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-                {toast.type === 'conflict'
-                  ? '⚡ Claim Conflict (HTTP 409)'
-                  : toast.type === 'forbidden'
-                    ? '🔒 Access Denied (HTTP 403)'
-                    : toast.type === 'success'
-                      ? '✓ Success'
-                      : '⚠ Action Error'}
-              </div>
-              <div style={{ fontSize: '0.825rem', marginTop: '0.25rem', opacity: 0.95 }}>
-                {toast.message}
-              </div>
-              {toast.details && (
-                <div
-                  style={{
-                    fontSize: '0.75rem',
-                    marginTop: '0.35rem',
-                    opacity: 0.85,
-                    fontStyle: 'italic',
-                  }}
-                >
-                  {toast.details}
-                </div>
-              )}
-            </div>
-            <button
-              onClick={() => setToast(null)}
-              style={{ color: '#fff', opacity: 0.7, fontSize: '1.1rem', lineHeight: 1 }}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Left Navigation Sidebar */}
-      <Sidebar
-        currentUser={currentUser}
-        onSwitchPersona={(email) => void handleLoginAs(email)}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-      />
-
-      {/* Main Workspace Area */}
+  // If loading authentication state, show centered spinner
+  if (isAuthLoading) {
+    return (
       <div
         style={{
-          flex: 1,
+          minHeight: '100vh',
           display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-          overflowX: 'hidden',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'var(--bg-page)',
+          color: 'var(--text-muted)',
+          fontSize: '0.9rem',
+          fontWeight: 600,
         }}
       >
-        {/* Top Header */}
-        <Header
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          onOpenCreateModal={() => setIsCreateModalOpen(true)}
-          currentUser={currentUser}
-          systemReady={systemReady}
-          dbLatency={dbLatency}
-        />
-
-        {/* Dashboard Content Container */}
-        <div style={{ padding: '1.5rem 2rem', flex: 1 }}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 320px',
-              gap: '1.5rem',
-              alignItems: 'start',
-            }}
-          >
-            {/* Center / Left: Metrics + Kanban + Bottom Widgets */}
-            <div style={{ minWidth: 0 }}>
-              {/* 4 Stat Cards */}
-              <MetricCards items={items} />
-
-              {/* Kanban 4-Column Board */}
-              <KanbanBoard
-                items={filteredItems}
-                currentUser={currentUser}
-                onClaim={(item) => void handleClaim(item)}
-                onTransition={(itemId, status) => void handleTransition(itemId, status)}
-                onOpenDrawer={(item) => void handleOpenDrawer(item)}
-                onOpenCreateModal={() => setIsCreateModalOpen(true)}
-              />
-
-              {/* Task Timeline & Team Workload */}
-              <BottomWidgets />
-            </div>
-
-            {/* Right Sidebar: Today's Tasks, Upcoming, Priority */}
-            <div style={{ position: 'sticky', top: '1.5rem' }}>
-              <RightSidebar items={items} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
-            </div>
-          </div>
-        </div>
+        Initializing secure operational environment...
       </div>
+    );
+  }
 
-      {/* Create Task Modal */}
-      <CreateTaskModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onSubmit={handleCreateTask}
-        isSubmitting={createSubmitting}
+  // Route protection: if unauthenticated, render LoginPage
+  if (!currentUser || !token) {
+    return <LoginPage />;
+  }
+
+  return (
+    <>
+      <AppLayout
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        systemReady={systemReady}
+        dbLatency={dbLatency}
+        onOpenCreate={handleOpenCreate}
+      >
+        {currentView === 'dashboard' && (
+          <DashboardPage
+            onSelectItem={handleSelectItem}
+            onOpenCreate={handleOpenCreate}
+            onClaimItem={handleClaimItem}
+          />
+        )}
+
+        {currentView === 'items' && (
+          <WorkItemsPage
+            onSelectItem={handleSelectItem}
+            onOpenCreate={handleOpenCreate}
+            onClaimItem={handleClaimItem}
+            onOpenTransition={handleOpenTransition}
+            onOpenEdit={handleOpenEdit}
+          />
+        )}
+
+        {currentView === 'detail' && selectedItemId && (
+          <WorkItemDetailPage
+            itemId={selectedItemId}
+            onBack={() => setCurrentView('items')}
+            onClaimItem={handleClaimItem}
+            onOpenTransition={handleOpenTransition}
+            onOpenEdit={handleOpenEdit}
+          />
+        )}
+      </AppLayout>
+
+      {/* Create / Edit Work Item Modal */}
+      <WorkItemFormModal
+        isOpen={isFormModalOpen}
+        onClose={() => setIsFormModalOpen(false)}
+        onSubmitCreate={handleCreateSubmit}
+        onSubmitUpdate={handleUpdateSubmit}
+        initialItem={editingItem}
       />
 
-      {/* Slide-over Item Drawer */}
-      <ItemDrawer
-        item={activeDrawerItem}
-        onClose={() => setActiveDrawerItem(null)}
-        isLoading={drawerLoading}
-        activityHistory={activityHistory}
-        comments={comments}
-        onAddComment={handleAddComment}
-        onClaim={handleClaim}
-        onTransition={handleTransition}
-        currentUserId={currentUser?.id}
-        isViewer={currentUser?.memberships[0]?.role === 'VIEWER'}
+      {/* State Transition Modal */}
+      <TransitionModal
+        isOpen={Boolean(transitioningItem)}
+        item={transitioningItem}
+        onClose={() => setTransitioningItem(null)}
+        onConfirm={handleConfirmTransition}
+        userRole={currentUser.memberships[0]?.role}
       />
-    </div>
+
+      {/* Toast Alert Container */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <DashboardAppContent />
+    </AuthProvider>
   );
 };
 

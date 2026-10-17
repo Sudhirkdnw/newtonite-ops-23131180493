@@ -1,10 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import {
-  loginUser,
-  fetchCurrentUser,
-  type UserProfile,
-  type AuthResponse,
-} from '../services/api';
+import { loginUser, fetchCurrentUser, type UserProfile, type AuthResponse } from '../services/api';
 
 const TOKEN_STORAGE_KEY = 'newtonite_auth_token';
 

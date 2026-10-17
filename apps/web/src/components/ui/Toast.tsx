@@ -67,12 +67,26 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
               boxShadow: 'var(--shadow-popover)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: '0.75rem',
+              }}
+            >
               <div>
                 <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>
                   {toast.title || titleMap[toast.type]}
                 </div>
-                <div style={{ fontSize: '0.8rem', marginTop: '0.2rem', opacity: 0.95, lineHeight: 1.4 }}>
+                <div
+                  style={{
+                    fontSize: '0.8rem',
+                    marginTop: '0.2rem',
+                    opacity: 0.95,
+                    lineHeight: 1.4,
+                  }}
+                >
                   {toast.message}
                 </div>
                 {toast.details && (

@@ -325,3 +325,54 @@ Implement the **Transactional Outbox Pattern**:
 
 - _Pros_: 100% transactional consistency between database mutations and dispatched asynchronous events; zero external message queue dependencies (pure PostgreSQL).
 - _Cons_: Slightly higher write amplification (one extra row inserted per business mutation).
+
+---
+
+## ADR 014: Frontend Authentication, Token Storage Strategy, and Route Protection
+
+### Context
+
+Step 4 requires an enterprise authentication architecture that protects routes, manages user sessions safely, retrieves real profiles and team memberships, and handles token expiration (HTTP 401) and forbidden operations (HTTP 403) without exposing sensitive credentials.
+
+### Options Considered
+
+1. **`localStorage`**: Persistent across browser restarts and all tabs. High vulnerability to token theft via Cross-Site Scripting (XSS) and accidental cross-persona leakage when testing multiple roles in adjacent tabs.
+2. **`sessionStorage` + In-Memory State**: Scoped strictly to the individual browser tab and purged when the tab is closed. Allows opening separate tabs with different roles (e.g. Lead in tab 1, Member in tab 2) without cookie conflicts.
+3. **Pure In-Memory (React state only)**: Maximum security, but every page refresh forces re-authentication, disrupting operator workflows during crisis triage.
+
+### Decision
+
+Adopt **`sessionStorage` paired with React `AuthContext`**:
+
+1. Upon successful `POST /api/v1/auth/login`, store the bearer token in `sessionStorage.getItem('newtonite_auth_token')`.
+2. On app mount or reload, verify the token by invoking `GET /api/v1/auth/me`. If invalid or expired (HTTP 401), immediately purge the storage and reset state.
+3. On user logout, remove the token from `sessionStorage` and reset context.
+4. If any subsequent API call returns HTTP 401, trigger automatic session eviction and redirect to the Login view.
+
+### Trade-offs
+
+- _Pros_: Secure tab isolation for role testing; survives page refreshes within the same tab; zero token persistence on shared workstations after tab closure.
+- _Cons_: Operators must log in again when opening new tabs.
+
+---
+
+## ADR 015: Server-Side Cursor Pagination & Real Operational Dashboard Queues
+
+### Context
+
+Enterprise operational backlogs can contain thousands of incidents and tasks. Downloading the entire database to the client and filtering locally wastes bandwidth, causes client UI freezes, and fails under production scale. Furthermore, classic `OFFSET / LIMIT` pagination skips or duplicates rows when items are created or deleted concurrently.
+
+### Decision
+
+1. **Server-Side Cursor Pagination**:
+   - The backend encodes cursor tokens based on the keyset `(createdAt, id)` in Base64.
+   - The frontend `fetchWorkItems` client transmits `cursor`, `limit`, `teamId`, `status`, `priority`, `type`, and `search` query parameters.
+   - The frontend maintains a cursor stack (`cursorStack`) enabling deterministic Previous / Next navigation across pages.
+2. **Real Operational Queues on Dashboard**:
+   - The Main Dashboard queries the backend and strictly categorizes items into 5 operational queues:
+     1. **Assigned to Me**: Filtered by active user ID.
+     2. **Unassigned Urgent**: Filtered by missing assignee and `CRITICAL` or `URGENT` priority.
+     3. **Awaiting My Approval**: Filtered by `IN_REVIEW` status in teams where the operator holds `LEAD` or `ADMIN` role.
+     4. **Work Requiring Attention**: Filtered by `BLOCKED` status or untriaged backlog items.
+     5. **Recent Work Items**: Latest audited operational records.
+   - Zero fabricated metrics or mock tasks are used.
