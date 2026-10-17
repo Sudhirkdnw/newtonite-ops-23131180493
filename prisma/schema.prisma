@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// Domain Enums
+// ==========================================
+
+enum WorkItemType {
+  INCIDENT
+  CUSTOMER_ISSUE
+  PAYMENT
+  COMPLIANCE
+  TASK
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+  CRITICAL
+}
+
+enum WorkItemStatus {
+  BACKLOG
+  TRIAGED
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum TeamRole {
+  VIEWER
+  MEMBER
+  LEAD
+  ADMIN
+}
+
+enum SystemRole {
+  USER
+  SYSTEM_ADMIN
+}
+
+enum ActivityAction {
+  CREATED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  ASSIGNED
+  UNASSIGNED
+  CLAIMED
+  COMMENT_ADDED
+  WORKFLOW_APPROVED
+  UPDATED
+}
+
+enum OutboxJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+}
+
+// ==========================================
+// Authentication & Organizational Models
+// ==========================================
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  isActive     Boolean    @default(true)
+  systemRole   SystemRole @default(USER)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  memberships       Membership[]
+  assignedWorkItems WorkItem[]      @relation("AssignedWorkItems")
+  createdWorkItems  WorkItem[]      @relation("CreatedWorkItems")
+  comments          Comment[]
+  activities        ActivityEvent[]
+  idempotencyKeys   IdempotencyKey[]
+
+  @@index([email])
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships Membership[]
+  workItems   WorkItem[]
+
+  @@index([slug])
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  userId    String
+  teamId    String
+  role      TeamRole @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  // Enforce unique user per team membership
+  @@unique([userId, teamId])
+  @@index([teamId, role])
+  @@index([userId])
+}
+
+// ==========================================
+// Core Operations Work Item Model
+// ==========================================
+
+model WorkItem {
+  id          String         @id @default(uuid())
+  title       String
+  description String?
+  type        WorkItemType
+  priority    Priority       @default(MEDIUM)
+  status      WorkItemStatus @default(BACKLOG)
+  
+  teamId      String
+  assigneeId  String?
+  creatorId   String
+
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  // Integer version for optimistic locking concurrency control
+  version     Int            @default(1)
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  team        Team           @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  assignee    User?          @relation("AssignedWorkItems", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator     User           @relation("CreatedWorkItems", fields: [creatorId], references: [id], onDelete: Restrict)
+
+  comments    Comment[]
+  activities  ActivityEvent[]
+
+  // Indexes designed for team-scoped list queries, status/priority filtering, and stable keyset pagination
+  @@index([teamId, status, priority, createdAt, id])
+  @@index([teamId, assigneeId, status])
+  @@index([teamId, createdAt(sort: Desc), id])
+  @@index([creatorId])
+}
+
+// ==========================================
+// Append-Only Audit & Activity History
+// ==========================================
+
+model ActivityEvent {
+  id            String         @id @default(uuid())
+  workItemId    String
+  actorId       String?
+  action        ActivityAction
+  previousState Json?
+  newState      Json?
+  metadata      Json?
+  createdAt     DateTime       @default(now())
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  // Fast chronological ordering for work-item activity timeline
+  @@index([workItemId, createdAt(sort: Asc)])
+  @@index([actorId, createdAt])
+}
+
+model Comment {
+  id         String   @id @default(uuid())
+  workItemId String
+  authorId   String
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workItem WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([workItemId, createdAt(sort: Asc)])
+  @@index([authorId])
+}
+
+// ==========================================
+// Reliability & Resilience Models
+// ==========================================
+
+model IdempotencyKey {
+  id             String    @id @default(uuid())
+  key            String    @unique
+  userId         String?
+  requestMethod  String
+  requestPath    String
+  requestHash    String
+  statusCode     Int?
+  responseHeaders Json?
+  responseBody   Json?
+  status         String    @default("PROCESSING") // PROCESSING, RESOLVED, FAILED
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt])
+  @@index([userId, key])
+}
+
+model OutboxJob {
+  id            String          @id @default(uuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  status        OutboxJobStatus @default(PENDING)
+  attempts      Int             @default(0)
+  maxAttempts   Int             @default(5)
+  nextRetryAt   DateTime        @default(now())
+  processedAt   DateTime?
+  lastError     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Polling index for worker lock-free dequeue
+  @@index([status, nextRetryAt])
+  @@index([aggregateType, aggregateId])
+}

@@ -1,0 +1,41 @@
+{
+  "name": "newtonite-ops",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Newtonite Operations Under Pressure Platform - High Reliability Core Operations",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=@newtonite/api run dev",
+    "dev:all": "concurrently -n \"api,web\" -c \"blue,green\" \"npm --workspace=@newtonite/api run dev\" \"npm --workspace=@newtonite/web run dev\"",
+    "dev:api": "npm --workspace=@newtonite/api run dev",
+    "dev:web": "npm --workspace=@newtonite/web run dev",
+    "build": "npm --workspace=@newtonite/shared run build && npm --workspace=@newtonite/api run build && npm --workspace=@newtonite/web run build",
+    "typecheck": "npm --workspace=@newtonite/shared run typecheck && npm --workspace=@newtonite/api run typecheck && npm --workspace=@newtonite/web run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "test": "npm --workspace=@newtonite/api run test",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@typescript-eslint/eslint-plugin": "^8.24.1",
+    "@typescript-eslint/parser": "^8.24.1",
+    "concurrently": "^9.1.2",
+    "dotenv": "^16.4.7",
+    "eslint": "^9.20.1",
+    "prettier": "^3.5.1",
+    "prisma": "^6.4.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.1"
+  }
+}
