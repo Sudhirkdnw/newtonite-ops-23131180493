@@ -3,11 +3,13 @@ import { useAuth } from '../../context/AuthContext';
 import { RoleBadge } from '../ui/Badge';
 
 interface AppLayoutProps {
-  currentView: 'dashboard' | 'items' | 'detail';
-  setCurrentView: (view: 'dashboard' | 'items' | 'detail') => void;
+  currentView: 'dashboard' | 'items' | 'detail' | 'settings';
+  setCurrentView: (view: 'dashboard' | 'items' | 'detail' | 'settings') => void;
   systemReady: boolean | null;
   dbLatency?: number;
   onOpenCreate: () => void;
+  appName?: string;
+  logoUrl?: string | null;
   children: React.ReactNode;
 }
 
@@ -24,6 +26,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   systemReady,
   dbLatency,
   onOpenCreate,
+  appName,
+  logoUrl,
   children,
 }) => {
   const { currentUser, switchPersona, logout } = useAuth();
@@ -32,19 +36,31 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const teamName = currentUser?.memberships[0]?.teamName || 'Platform Ops';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: 'var(--bg-page)' }}>
+    <div
+      style={{
+        display: 'flex',
+        height: '100vh',
+        maxHeight: '100vh',
+        overflow: 'hidden',
+        backgroundColor: 'var(--bg-page)',
+      }}
+    >
       {/* Left Sidebar */}
       <aside
         style={{
           width: '260px',
           minWidth: '260px',
+          maxWidth: '260px',
           backgroundColor: 'var(--bg-sidebar)',
           borderRight: '1px solid var(--border-color)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '1.25rem 1rem',
-          minHeight: '100vh',
+          height: '100vh',
+          maxHeight: '100vh',
+          overflowY: 'auto',
+          flexShrink: 0,
         }}
       >
         <div>
@@ -57,23 +73,37 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               padding: '0.25rem 0.5rem 1.5rem',
             }}
           >
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                backgroundColor: 'var(--primary-blue)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: '1.2rem',
-                boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
-              }}
-            >
-              ⚙
-            </div>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="App Logo"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  objectFit: 'contain',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--primary-blue)',
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  fontSize: '1.2rem',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                }}
+              >
+                ⚙
+              </div>
+            )}
             <div>
               <div
                 style={{
@@ -84,7 +114,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   lineHeight: 1.2,
                 }}
               >
-                Newtonite Ops
+                {appName || 'Newtonite Ops'}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                 Operations Under Pressure
@@ -147,6 +177,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <span>📋</span>
               <span>Work Items Registry</span>
             </button>
+
+            {userRole === 'ADMIN' && (
+              <button
+                id="nav-settings"
+                onClick={() => setCurrentView('settings')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.65rem 0.85rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.875rem',
+                  fontWeight: currentView === 'settings' ? 750 : 500,
+                  backgroundColor:
+                    currentView === 'settings' ? 'var(--primary-blue)' : 'transparent',
+                  color: currentView === 'settings' ? '#ffffff' : 'var(--text-muted)',
+                  textAlign: 'left',
+                }}
+              >
+                <span>⚙️</span>
+                <span>System Settings</span>
+              </button>
+            )}
 
             <button
               id="nav-quick-create"
@@ -295,12 +348,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           display: 'flex',
           flexDirection: 'column',
           minWidth: 0,
+          height: '100vh',
+          maxHeight: '100vh',
+          overflowY: 'auto',
           overflowX: 'hidden',
         }}
       >
         {/* Top Header Navbar */}
         <header
           style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 20,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -320,7 +379,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 ? 'Operations Dashboard'
                 : currentView === 'items'
                   ? 'Work Items Registry'
-                  : 'Work Item Detail'}
+                  : currentView === 'settings'
+                    ? 'Settings & Configuration'
+                    : 'Work Item Detail'}
             </span>
           </div>
 

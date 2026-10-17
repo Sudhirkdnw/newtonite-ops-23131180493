@@ -23,10 +23,30 @@ export interface WorkItemSlaInput {
  * 5. Active items within the warning threshold (<= 25% or max buffer remaining) are AT_RISK.
  * 6. Other active items are HEALTHY.
  */
-export function calculateSlaStatus(item: WorkItemSlaInput, now: Date = new Date()): SlaMetadata {
-  const config = SLA_CONFIG[item.priority] || SLA_CONFIG[Priority.MEDIUM];
+export interface CustomSlaOptions {
+  durations?: Record<Priority, number>; // in minutes
+  warningBufferPercent?: number; // e.g. 25
+}
+
+export function calculateSlaStatus(
+  item: WorkItemSlaInput,
+  now: Date = new Date(),
+  customConfig?: CustomSlaOptions
+): SlaMetadata {
+  const defaultConfig = SLA_CONFIG[item.priority] || SLA_CONFIG[Priority.MEDIUM];
+
+  // Dynamic SLA durations from Settings if customized
+  const customDurationMinutes = customConfig?.durations?.[item.priority];
+  const durationMs = customDurationMinutes
+    ? customDurationMinutes * 60 * 1000
+    : defaultConfig.durationMs;
+
+  const warningRatio = customConfig?.warningBufferPercent
+    ? customConfig.warningBufferPercent / 100
+    : defaultConfig.warningThresholdRatio;
+
   const createdTime = new Date(item.createdAt).getTime();
-  const slaDeadline = new Date(createdTime + config.durationMs);
+  const slaDeadline = new Date(createdTime + durationMs);
 
   let targetDeadline = slaDeadline;
   if (item.dueDate) {
@@ -42,7 +62,7 @@ export function calculateSlaStatus(item: WorkItemSlaInput, now: Date = new Date(
   if (item.status === WorkItemStatus.COMPLETED || item.status === WorkItemStatus.CANCELLED) {
     return {
       targetDeadline: targetDeadline.toISOString(),
-      slaDurationMs: config.durationMs,
+      slaDurationMs: durationMs,
       timeRemainingMs: 0,
       status: SlaStatus.RESOLVED,
       isBreached: false,
@@ -57,7 +77,7 @@ export function calculateSlaStatus(item: WorkItemSlaInput, now: Date = new Date(
   if (timeRemainingMs <= 0) {
     return {
       targetDeadline: targetDeadline.toISOString(),
-      slaDurationMs: config.durationMs,
+      slaDurationMs: durationMs,
       timeRemainingMs,
       status: SlaStatus.BREACHED,
       isBreached: true,
@@ -66,15 +86,12 @@ export function calculateSlaStatus(item: WorkItemSlaInput, now: Date = new Date(
     };
   }
 
-  const warningBufferMs = Math.min(
-    config.durationMs * config.warningThresholdRatio,
-    config.maxWarningBufferMs
-  );
+  const warningBufferMs = Math.min(durationMs * warningRatio, defaultConfig.maxWarningBufferMs);
 
   if (timeRemainingMs <= warningBufferMs) {
     return {
       targetDeadline: targetDeadline.toISOString(),
-      slaDurationMs: config.durationMs,
+      slaDurationMs: durationMs,
       timeRemainingMs,
       status: SlaStatus.AT_RISK,
       isBreached: false,
@@ -85,7 +102,7 @@ export function calculateSlaStatus(item: WorkItemSlaInput, now: Date = new Date(
 
   return {
     targetDeadline: targetDeadline.toISOString(),
-    slaDurationMs: config.durationMs,
+    slaDurationMs: durationMs,
     timeRemainingMs,
     status: SlaStatus.HEALTHY,
     isBreached: false,

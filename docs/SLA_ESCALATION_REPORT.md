@@ -11,7 +11,9 @@ The system ensures that operational commitments are tracked deterministically on
 ## 2. Design Decision for SLA Deadlines & Semantics
 
 ### 2.1 Deadline Calculation Policy
+
 In high-reliability enterprise operations, SLA commitments represent non-negotiable service guarantees:
+
 1. **Contractual Maximum SLA Deadline**:
    - `slaDeadline = createdAt + SLA_CONFIG[priority].durationMs`
    - Configurable default durations by priority:
@@ -32,6 +34,7 @@ In high-reliability enterprise operations, SLA commitments represent non-negotia
    - `HEALTHY`: Active items with comfortable resolution buffer.
 
 ### 2.2 Injectable Deterministic Clocks
+
 All calculation functions and scanner services accept an injectable `now?: Date = new Date()` parameter. This permits instant, 100% deterministic test assertions without `setTimeout` delays or clock drift.
 
 ---
@@ -69,6 +72,7 @@ sequenceDiagram
 ```
 
 ### 3.1 Idempotency Guarantee
+
 - The `WorkItem` model maintains `lastEscalationStatus String @default("NONE")`.
 - When an escalation is evaluated, an atomic conditional query is executed inside a database transaction:
   ```sql
@@ -85,31 +89,32 @@ sequenceDiagram
 
 ## 4. Summary of Files Changed & Created
 
-| File | Status | Description |
-| :--- | :---: | :--- |
-| `packages/shared/src/index.ts` | **Modified** | Added `SlaStatus`, `SLA_CONFIG`, `SlaMetadata`, `SlaOverviewDTO`, `ActivityAction.ESCALATED`, and updated `WorkItemSummaryDTO`. |
-| `prisma/schema.prisma` | **Modified** | Added `lastEscalationStatus` and `@@index([teamId, status, lastEscalationStatus])` to `WorkItem`. Added `ESCALATED` to `ActivityAction`. |
-| `prisma/migrations/20261017132936_add_sla_escalation/` | **Created** | PostgreSQL migration adding schema columns and enum values. |
-| `apps/api/src/modules/sla/sla-calculator.ts` | **Created** | Deterministic SLA calculator with injectable clock and warning buffer calculation. |
-| `apps/api/src/modules/sla/sla-calculator.test.ts` | **Created** | Unit test suite covering healthy, at-risk, breached, priority durations, and closed items. |
-| `apps/api/src/modules/sla/sla.service.ts` | **Created** | `SlaService` implementing `scanAndEscalate` and `getTeamSlaOverview` with team RBAC. |
-| `apps/api/src/modules/outbox/outbox.worker.ts` | **Modified** | Registered built-in `WORK_ITEM_ESCALATED` handler and added `scanEscalations()` hook. |
-| `apps/api/src/modules/work-items/work-items.service.ts` | **Modified** | Integrated `calculateSlaStatus` into `mapToDTO` for all list/detail/mutation endpoints. |
-| `apps/api/src/modules/work-items/work-items.router.ts` | **Modified** | Added `GET /api/v1/items/sla/overview` and `POST /api/v1/items/sla/escalate` routes. |
-| `apps/web/src/components/ui/Badge.tsx` | **Modified** | Added `SlaBadge` component with status styling (`Within SLA`, `At Risk`, `Breached`). |
-| `apps/web/src/pages/DashboardPage.tsx` | **Modified** | Added SLA KPI overview banner, Urgent Attention queue, and SLA badges on item cards. |
-| `apps/web/src/pages/WorkItemsPage.tsx` | **Modified** | Added `SLA Deadline` table column and badge rendering in work items catalog. |
-| `apps/web/src/pages/WorkItemDetailPage.tsx` | **Modified** | Added SLA badge in header and SLA Commitment block in metadata grid. |
-| `tests/integration/sla-escalation.test.ts` | **Created** | 9-scenario integration suite testing end-to-end SLA tracking, concurrency, and RBAC. |
-| `ENGINEERING_DECISIONS.md` | **Modified** | Added ADR 016 covering SLA deadline derivation and escalation mechanics. |
-| `KNOWN_LIMITATIONS.md` | **Modified** | Updated verified critical behaviours and documented operational boundaries. |
-| `README.md` | **Modified** | Updated endpoints table and implementation status to reflect Step 6 completion. |
+| File                                                    |    Status    | Description                                                                                                                              |
+| :------------------------------------------------------ | :----------: | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/index.ts`                          | **Modified** | Added `SlaStatus`, `SLA_CONFIG`, `SlaMetadata`, `SlaOverviewDTO`, `ActivityAction.ESCALATED`, and updated `WorkItemSummaryDTO`.          |
+| `prisma/schema.prisma`                                  | **Modified** | Added `lastEscalationStatus` and `@@index([teamId, status, lastEscalationStatus])` to `WorkItem`. Added `ESCALATED` to `ActivityAction`. |
+| `prisma/migrations/20261017132936_add_sla_escalation/`  | **Created**  | PostgreSQL migration adding schema columns and enum values.                                                                              |
+| `apps/api/src/modules/sla/sla-calculator.ts`            | **Created**  | Deterministic SLA calculator with injectable clock and warning buffer calculation.                                                       |
+| `apps/api/src/modules/sla/sla-calculator.test.ts`       | **Created**  | Unit test suite covering healthy, at-risk, breached, priority durations, and closed items.                                               |
+| `apps/api/src/modules/sla/sla.service.ts`               | **Created**  | `SlaService` implementing `scanAndEscalate` and `getTeamSlaOverview` with team RBAC.                                                     |
+| `apps/api/src/modules/outbox/outbox.worker.ts`          | **Modified** | Registered built-in `WORK_ITEM_ESCALATED` handler and added `scanEscalations()` hook.                                                    |
+| `apps/api/src/modules/work-items/work-items.service.ts` | **Modified** | Integrated `calculateSlaStatus` into `mapToDTO` for all list/detail/mutation endpoints.                                                  |
+| `apps/api/src/modules/work-items/work-items.router.ts`  | **Modified** | Added `GET /api/v1/items/sla/overview` and `POST /api/v1/items/sla/escalate` routes.                                                     |
+| `apps/web/src/components/ui/Badge.tsx`                  | **Modified** | Added `SlaBadge` component with status styling (`Within SLA`, `At Risk`, `Breached`).                                                    |
+| `apps/web/src/pages/DashboardPage.tsx`                  | **Modified** | Added SLA KPI overview banner, Urgent Attention queue, and SLA badges on item cards.                                                     |
+| `apps/web/src/pages/WorkItemsPage.tsx`                  | **Modified** | Added `SLA Deadline` table column and badge rendering in work items catalog.                                                             |
+| `apps/web/src/pages/WorkItemDetailPage.tsx`             | **Modified** | Added SLA badge in header and SLA Commitment block in metadata grid.                                                                     |
+| `tests/integration/sla-escalation.test.ts`              | **Created**  | 9-scenario integration suite testing end-to-end SLA tracking, concurrency, and RBAC.                                                     |
+| `ENGINEERING_DECISIONS.md`                              | **Modified** | Added ADR 016 covering SLA deadline derivation and escalation mechanics.                                                                 |
+| `KNOWN_LIMITATIONS.md`                                  | **Modified** | Updated verified critical behaviours and documented operational boundaries.                                                              |
+| `README.md`                                             | **Modified** | Updated endpoints table and implementation status to reflect Step 6 completion.                                                          |
 
 ---
 
 ## 5. Actual Test Execution & Verification
 
 ### 5.1 Test Suite Summary
+
 - **Test Files**: **13 passed**, 0 failed
 - **Total Tests**: **94 passed**, 0 failed
 - **Duration**: ~5.31s
@@ -133,6 +138,7 @@ sequenceDiagram
 ```
 
 ### 5.2 Specific SLA Verification Scenarios Tested
+
 1. **Scenario 1 (Calculated Metadata Exposure)**: Verified `GET /api/v1/items` and `GET /api/v1/items/:id` include valid `sla` structure.
 2. **Scenario 2 (AT_RISK Escalation)**: Simulating `now` within warning buffer transitions `lastEscalationStatus` to `AT_RISK` and creates `ActivityEvent (ESCALATED)`.
 3. **Scenario 3 (BREACHED Escalation)**: Simulating `now` past deadline transitions `lastEscalationStatus` to `BREACHED` and creates `OutboxJob (WORK_ITEM_ESCALATED)`.
@@ -147,15 +153,15 @@ sequenceDiagram
 
 ## 6. Quality Gate Results
 
-| Quality Gate | Command | Result |
-| :--- | :--- | :---: |
-| **All Automated Tests** | `npm test` | **PASS** (94 passed, 0 failed across 13 suites) |
-| **TypeScript Strict Typecheck** | `npm run typecheck` (`tsc --noEmit`) | **PASS** (0 errors) |
-| **ESLint Quality Check** | `npm run lint` (`eslint .`) | **PASS** (0 errors, 0 warnings) |
-| **Code Style Formatting** | `npm run format:check` (`prettier --check`) | **PASS** (100% compliant) |
-| **API Production Build** | `npm run build:api` (`tsc -p apps/api/tsconfig.json`) | **PASS** (Clean build) |
-| **Web Production Build** | `npm run build:web` (`vite build apps/web`) | **PASS** (`dist/assets/index-UxF41BJa.js` 219.07 kB) |
-| **Database Seeding** | `npm run db:seed` (`tsx prisma/seed.ts`) | **PASS** (4 teams, 10 users, 10 work items in <3s) |
+| Quality Gate                    | Command                                               |                        Result                        |
+| :------------------------------ | :---------------------------------------------------- | :--------------------------------------------------: |
+| **All Automated Tests**         | `npm test`                                            |   **PASS** (94 passed, 0 failed across 13 suites)    |
+| **TypeScript Strict Typecheck** | `npm run typecheck` (`tsc --noEmit`)                  |                 **PASS** (0 errors)                  |
+| **ESLint Quality Check**        | `npm run lint` (`eslint .`)                           |           **PASS** (0 errors, 0 warnings)            |
+| **Code Style Formatting**       | `npm run format:check` (`prettier --check`)           |              **PASS** (100% compliant)               |
+| **API Production Build**        | `npm run build:api` (`tsc -p apps/api/tsconfig.json`) |                **PASS** (Clean build)                |
+| **Web Production Build**        | `npm run build:web` (`vite build apps/web`)           | **PASS** (`dist/assets/index-UxF41BJa.js` 219.07 kB) |
+| **Database Seeding**            | `npm run db:seed` (`tsx prisma/seed.ts`)              |  **PASS** (4 teams, 10 users, 10 work items in <3s)  |
 
 ---
 

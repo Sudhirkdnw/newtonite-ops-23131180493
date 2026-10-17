@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { healthRouter } from './modules/health/health.router';
 import { authRouter } from './modules/auth/auth.router';
 import { workItemsRouter } from './modules/work-items/work-items.router';
+import { settingsRouter } from './modules/settings/settings.router';
 import { NotFoundError } from './shared/errors/AppError';
 
 export function createApp(): Application {
@@ -64,8 +65,8 @@ export function createApp(): Application {
   app.use(requestIdMiddleware);
 
   // 5. Body Parsing
-  app.use(express.json({ limit: '1mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+  app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
   // 6. Request Logging
   app.use(requestLogger);
@@ -78,6 +79,7 @@ export function createApp(): Application {
   apiRouter.use('/', healthRouter);
   apiRouter.use('/auth', authRouter);
   apiRouter.use('/items', workItemsRouter);
+  apiRouter.use('/settings', settingsRouter);
 
   // Mount API router
   app.use(env.API_PREFIX, apiRouter);

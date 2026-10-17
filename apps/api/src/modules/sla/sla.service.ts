@@ -12,6 +12,8 @@ import { NotFoundError } from '../../shared/errors/AppError';
 import { logger } from '../../shared/logger/logger';
 import type { AuthenticatedUser } from '../../middleware/authenticate';
 import { calculateSlaStatus } from './sla-calculator';
+import { settingsService } from '../settings/settings.service';
+import type { SlaSettingsDTO } from '@newtonite/shared';
 
 export interface ScanAndEscalateOptions {
   now?: Date;
@@ -36,6 +38,12 @@ export class SlaService {
    * or OutboxJobs.
    */
   async scanAndEscalate(options: ScanAndEscalateOptions = {}): Promise<ScanResult> {
+    const slaSettings = await settingsService.getSettings<SlaSettingsDTO>('sla');
+    if (slaSettings.escalationProcessingEnabled === false) {
+      logger.info('[SlaService] Escalation processing is disabled via Configuration Center');
+      return { scanned: 0, escalated: 0, unchanged: 0 };
+    }
+
     const now = options.now ?? new Date();
     const batchSize = Math.min(options.batchSize ?? 50, 200);
 
@@ -61,7 +69,11 @@ export class SlaService {
           status: candidate.status as WorkItemStatus,
           lastEscalationStatus: candidate.lastEscalationStatus,
         },
-        now
+        now,
+        {
+          durations: slaSettings.durations as Record<Priority, number>,
+          warningBufferPercent: slaSettings.warningBufferPercent,
+        }
       );
 
       // Determine target escalation level based on computed SLA status
@@ -223,6 +235,8 @@ export class SlaService {
     let atRiskCount = 0;
     let breachedCount = 0;
 
+    const slaSettings = await settingsService.getSettings<SlaSettingsDTO>('sla');
+
     const itemsWithSla: WorkItemSummaryDTO[] = activeItems.map((item) => {
       const sla = calculateSlaStatus(
         {
@@ -232,7 +246,11 @@ export class SlaService {
           status: item.status as WorkItemStatus,
           lastEscalationStatus: item.lastEscalationStatus,
         },
-        now
+        now,
+        {
+          durations: slaSettings.durations as Record<Priority, number>,
+          warningBufferPercent: slaSettings.warningBufferPercent,
+        }
       );
 
       if (sla.status === SlaStatus.HEALTHY) healthyCount++;

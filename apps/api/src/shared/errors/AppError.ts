@@ -56,3 +56,9 @@ export class ValidationError extends AppError {
     super(message, 422, 'VALIDATION_ERROR', true, details);
   }
 }
+
+export class ServiceUnavailableError extends AppError {
+  constructor(message = 'Service temporarily unavailable', details?: unknown) {
+    super(message, 503, 'SERVICE_UNAVAILABLE', true, details);
+  }
+}

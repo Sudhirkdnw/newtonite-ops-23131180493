@@ -90,6 +90,8 @@ model User {
   comments          Comment[]
   activities        ActivityEvent[]
   idempotencyKeys   IdempotencyKey[]
+  settingUpdates    SystemSetting[]     @relation("SettingUpdates")
+  settingAudits     SettingAuditEvent[] @relation("SettingAuditActor")
 
   @@index([email])
 }
@@ -248,3 +250,38 @@ model OutboxJob {
   @@index([status, nextRetryAt])
   @@index([aggregateType, aggregateId])
 }
+
+// ==========================================
+// Centralized Settings & Configuration Models
+// ==========================================
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  category  String   // 'general', 'branding', 'email', 'sla', 'workflow', 'security', 'notification'
+  key       String   @unique
+  value     Json
+  isSecret  Boolean  @default(false)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  updater   User?    @relation("SettingUpdates", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@index([category])
+}
+
+model SettingAuditEvent {
+  id        String   @id @default(uuid())
+  category  String
+  action    String   // 'UPDATED', 'TESTED'
+  actorId   String?
+  diff      Json?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  actor     User?    @relation("SettingAuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([category, createdAt])
+  @@index([actorId])
+}
+

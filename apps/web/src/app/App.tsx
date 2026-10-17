@@ -4,6 +4,7 @@ import type {
   WorkItemStatus,
   CreateWorkItemInput,
   UpdateWorkItemInput,
+  BrandingSettingsDTO,
 } from '@newtonite/shared';
 import {
   claimWorkItem,
@@ -11,6 +12,7 @@ import {
   createWorkItem,
   updateWorkItem,
   fetchReadiness,
+  fetchPublicBranding,
 } from '../services/api';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { AppLayout } from '../components/layout/AppLayout';
@@ -18,6 +20,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { WorkItemsPage } from '../pages/WorkItemsPage';
 import { WorkItemDetailPage } from '../pages/WorkItemDetailPage';
+import { SettingsPage } from '../pages/SettingsPage';
 import { WorkItemFormModal } from '../components/WorkItemFormModal';
 import { TransitionModal } from '../components/TransitionModal';
 import { ToastContainer, type ToastMessage } from '../components/ui/Toast';
@@ -26,8 +29,13 @@ const DashboardAppContent: React.FC = () => {
   const { token, currentUser, isLoading: isAuthLoading } = useAuth();
 
   // Navigation state
-  const [currentView, setCurrentView] = useState<'dashboard' | 'items' | 'detail'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'items' | 'detail' | 'settings'>(
+    'dashboard'
+  );
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+
+  // Dynamic Branding State
+  const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
 
   // System Health
   const [systemReady, setSystemReady] = useState<boolean | null>(null);
@@ -56,6 +64,35 @@ const DashboardAppContent: React.FC = () => {
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // Apply branding dynamically to DOM and CSS custom variables
+  const applyBranding = useCallback((b: BrandingSettingsDTO) => {
+    setBranding(b);
+    if (b.browserTitle) {
+      document.title = b.browserTitle;
+    }
+    if (b.primaryColor) {
+      document.documentElement.style.setProperty('--primary-blue', b.primaryColor);
+    }
+    if (b.accentColor) {
+      document.documentElement.style.setProperty('--primary-blue-hover', b.accentColor);
+    }
+  }, []);
+
+  // Initial public branding load
+  useEffect(() => {
+    async function loadBranding() {
+      try {
+        const b = await fetchPublicBranding();
+        if (b) {
+          applyBranding(b);
+        }
+      } catch {
+        // Fallback to default
+      }
+    }
+    void loadBranding();
+  }, [applyBranding]);
 
   // System health poll
   useEffect(() => {
@@ -250,6 +287,8 @@ const DashboardAppContent: React.FC = () => {
         systemReady={systemReady}
         dbLatency={dbLatency}
         onOpenCreate={handleOpenCreate}
+        appName={branding?.appName}
+        logoUrl={branding?.logoUrl}
       >
         {currentView === 'dashboard' && (
           <DashboardPage
@@ -277,6 +316,10 @@ const DashboardAppContent: React.FC = () => {
             onOpenTransition={handleOpenTransition}
             onOpenEdit={handleOpenEdit}
           />
+        )}
+
+        {currentView === 'settings' && (
+          <SettingsPage onNotify={addToast} onBrandingUpdated={applyBranding} />
         )}
       </AppLayout>
 

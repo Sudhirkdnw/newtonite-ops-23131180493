@@ -9,6 +9,11 @@ import type {
   Priority,
   WorkItemType,
   UpdateWorkItemInput,
+  SettingsCategory,
+  BrandingSettingsDTO,
+  SettingAuditEventDTO,
+  OutboxQueueStatsDTO,
+  TeamMemberAdminDTO,
 } from '@newtonite/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -61,11 +66,12 @@ async function requestWithMeta<T>(
 
   const body = (await res.json()) as ApiResponse<T>;
 
-  if (!res.ok || !body.success) {
-    const errorMsg = !body.success && body.error ? body.error.message : `HTTP ${res.status}`;
+  if (!res.ok || !body?.success) {
+    const errorMsg =
+      body && !body.success && body.error ? body.error.message : `HTTP ${res.status}`;
     const err = new Error(errorMsg) as Error & { status: number; details?: unknown };
     err.status = res.status;
-    if (!body.success) {
+    if (body && !body.success && body.error) {
       err.details = body.error.details;
     }
     throw err;
@@ -254,4 +260,151 @@ export async function addComment(token: string, itemId: string, body: string): P
     },
     token
   );
+}
+
+// ==========================================
+// Settings & Configuration Center APIs
+// ==========================================
+
+export async function fetchPublicBranding(): Promise<BrandingSettingsDTO> {
+  return request<BrandingSettingsDTO>('/settings/public/branding');
+}
+
+export async function fetchSetting<T>(token: string, category: SettingsCategory): Promise<T> {
+  return request<T>(`/settings/${category}`, { method: 'GET' }, token);
+}
+
+export async function updateSetting<T>(
+  token: string,
+  category: SettingsCategory,
+  data: Partial<T>
+): Promise<T> {
+  return request<T>(
+    `/settings/${category}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    },
+    token
+  );
+}
+
+export async function uploadBrandingLogo(
+  token: string,
+  logoData: string
+): Promise<{ logoUrl: string }> {
+  return request<{ logoUrl: string }>(
+    '/settings/branding/logo',
+    {
+      method: 'POST',
+      body: JSON.stringify({ logoData }),
+    },
+    token
+  );
+}
+
+export async function testEmailConnection(
+  token: string
+): Promise<{ success: boolean; message: string }> {
+  return request<{ success: boolean; message: string }>(
+    '/settings/email/test-connection',
+    { method: 'POST' },
+    token
+  );
+}
+
+export async function sendTestEmail(
+  token: string,
+  recipientEmail: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  return request<{ success: boolean; messageId?: string; error?: string }>(
+    '/settings/email/send-test',
+    {
+      method: 'POST',
+      body: JSON.stringify({ recipientEmail }),
+    },
+    token
+  );
+}
+
+export async function fetchTeamsAdmin(token: string) {
+  return request<Array<{ id: string; name: string; slug: string; description: string | null }>>(
+    '/settings/teams/all',
+    { method: 'GET' },
+    token
+  );
+}
+
+export async function fetchTeamMembersAdmin(
+  token: string,
+  teamId?: string
+): Promise<TeamMemberAdminDTO[]> {
+  const query = teamId ? `?teamId=${teamId}` : '';
+  return request<TeamMemberAdminDTO[]>(`/settings/teams/members${query}`, { method: 'GET' }, token);
+}
+
+export async function updateMemberRoleAdmin(
+  token: string,
+  teamId: string,
+  membershipId: string,
+  role: string
+): Promise<void> {
+  await request<void>(
+    `/settings/teams/${teamId}/members/${membershipId}/role`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    },
+    token
+  );
+}
+
+export async function removeMemberAdmin(
+  token: string,
+  teamId: string,
+  membershipId: string
+): Promise<void> {
+  await request<void>(
+    `/settings/teams/${teamId}/members/${membershipId}`,
+    {
+      method: 'DELETE',
+    },
+    token
+  );
+}
+
+export async function toggleUserActiveAdmin(
+  token: string,
+  userId: string,
+  isActive: boolean
+): Promise<void> {
+  await request<void>(
+    `/settings/users/${userId}/active`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    },
+    token
+  );
+}
+
+export async function fetchQueueStats(token: string): Promise<OutboxQueueStatsDTO> {
+  return request<OutboxQueueStatsDTO>('/settings/jobs/stats', { method: 'GET' }, token);
+}
+
+export async function retryJob(token: string, jobId: string) {
+  return request(`/settings/jobs/${jobId}/retry`, { method: 'POST' }, token);
+}
+
+export async function fetchAuditHistory(
+  token: string,
+  category?: string,
+  page = 1,
+  limit = 20
+): Promise<{ items: SettingAuditEventDTO[]; total: number; page: number; limit: number }> {
+  const params = new URLSearchParams();
+  if (category) params.set('category', category);
+  params.set('page', String(page));
+  params.set('limit', String(limit));
+  return request(`/settings/audit/history?${params.toString()}`, { method: 'GET' }, token);
 }

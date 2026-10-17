@@ -405,3 +405,45 @@ Operational response systems require deterministic tracking of contractual commi
    - This enables thorough, instantaneous unit and integration testing without relying on brittle `setTimeout` delays or wall-clock timing variations.
 4. **Team-Scoped Authorization**:
    - Overview metrics (`GET /api/v1/items/sla/overview`) strictly scope calculations and urgent queues to the authenticated user's active team memberships, returning `404 Not Found` for cross-team probes.
+
+---
+
+## ADR 017: Centralized Configuration Architecture, Secret Masking & Operational Safeguards
+
+### Context
+
+Enterprise operations under pressure require runtime configurability across branding, notification transports, SLA parameters, workflow defaults, and team memberships without requiring redeployment or hard restarts. However, naive settings implementations frequently suffer from:
+
+1. Leaking plaintext credentials (SMTP secrets, tokens) in API responses and frontend forms.
+2. In-memory configuration drift across clustered instances.
+3. Overwriting existing secrets when forms are submitted with blank masked password inputs.
+4. Administrative lockout (an admin accidentally demoting themselves as the sole team administrator).
+5. "Mock" or cosmetic settings that have no actual backend or behavioral effect.
+
+### Decision
+
+1. **PostgreSQL-Backed Typed Storage with Shared Contracts**:
+   - Runtime configuration categories (`general`, `branding`, `email`, `sla`, `workflow`, `security`, `notification`) are stored in a dedicated `SystemSetting` table in PostgreSQL with JSONB values validated by strict Zod schemas in `@newtonite/shared`.
+   - Reads are accelerated via an in-memory TTL cache with immediate invalidation upon atomic transaction updates.
+
+2. **Secret Masking & Blank-Preservation Pattern**:
+   - Sensitive fields (`smtpPassword`) are marked `isSecret: true`.
+   - When retrieving configuration, secrets are masked (`••••••••`).
+   - When submitting updates from the UI, if the secret input is left blank or equals `••••••••`, the backend preserves the existing stored secret rather than clearing or overwriting it.
+
+3. **Append-Only Configuration Audit Trail**:
+   - Every mutation transactionally inserts a record into `SettingAuditEvent` recording category, key, actor ID, timestamp, and a calculated before/after diff.
+   - Plaintext secrets are strictly redacted before serialization into the audit diff.
+
+4. **Real End-to-End Behavioral Integrations**:
+   - **General / Maintenance Mode**: Middleware intercepts mutating requests on `/api/v1/items` with `503 Service Unavailable` for standard operators, while permitting Admins to perform emergency fixes.
+   - **Branding**: Dynamic CSS variables (`--primary-blue`, `--primary-blue-hover`), logo display, and document titles update dynamically on the client via `/api/v1/settings/public/branding`. Validated Base64 logo uploads enforce 2MB limits and image MIME types.
+   - **Email / SMTP**: Backed by `nodemailer` with active socket verification (`verify()`) and genuine test email dispatch (`sendMail()`).
+   - **SLA & Escalation Engine**: The Step 6 calculation engine dynamically pulls configured durations and warning buffers; the `escalationProcessingEnabled` toggle pauses background escalation scans.
+   - **Teams & Access Control**: Server-side role modification and user deactivation enforce strict safeguards against removing the last effective team administrator or self-deactivation.
+   - **Background Jobs**: Live Outbox statistics query PostgreSQL for real counts (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `DEAD_LETTER`) and support idempotent retries.
+
+### Trade-offs
+
+- _Pros_: Complete type safety from database to UI; zero credentials leaked in logs or audit diffs; instant configuration propagation without downtime.
+- _Cons_: Requires transactional overhead on settings updates to persist audit diffs; tests operating against a shared database require sequential execution or isolated setting resets.

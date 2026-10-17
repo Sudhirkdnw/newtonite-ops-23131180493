@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { workItemsService } from './work-items.service';
 import { slaService } from '../sla/sla.service';
 import { authenticate } from '../../middleware/authenticate';
+import { maintenanceModeMiddleware } from '../../middleware/maintenance';
 import { idempotencyMiddleware } from '../../middleware/idempotency';
 import { validateRequest } from '../../shared/validation/validate';
 import { sendSuccess } from '../../shared/http/response';
@@ -17,6 +18,7 @@ export const workItemsRouter = Router();
 
 // All work-item endpoints require authentication
 workItemsRouter.use(authenticate);
+workItemsRouter.use(maintenanceModeMiddleware);
 
 // 1. POST /api/v1/items — create a work item with idempotency support
 workItemsRouter.post(

@@ -314,6 +314,23 @@ _(If the item has already been modified to version 3+, returns `HTTP 409 Conflic
   - Terminal state exclusion: closed items (`COMPLETED`, `CANCELLED`) never trigger active escalations.
   - Dashboard integration: SLA KPI performance banner, Urgent Escalation queue, and countdown badges.
   - Team-scoped authorization returning `404 Not Found` for cross-team probes.
+- [x] **Critical Behaviour 9 — Centralized Settings & Configuration Center (Step 7)**:
+  - 10 functional settings categories backed by typed PostgreSQL models (`SystemSetting`, `SettingAuditEvent`) and in-memory caching.
+  - Public branding endpoint (`GET /api/v1/settings/public/branding`) delivering dynamic CSS variables (`--primary-blue`), browser title, and verified Base64 logo uploads (PNG/SVG <= 2MB).
+  - Secret masking (`••••••••`) and blank-preservation pattern protecting sensitive credentials (`smtpPassword`).
+  - Active Nodemailer transport verification and real test email sending action.
+  - Maintenance Mode middleware intercepting non-admin work-item mutations with `HTTP 503 Service Unavailable`.
+  - Dynamic SLA duration configuration and escalation scanner pause switch integrated with Step 6 engine.
+  - Team & access control administration with server-side last-admin safeguard and self-deactivation protection.
+  - Live Background Jobs queue statistics (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `DEAD_LETTER`) and idempotent retry endpoint.
+  - Append-only configuration audit history with redacted secrets in diff logs.
+- [x] **Step 7 Quality Gates & Verification**:
+  - **106 / 106 automated tests passing** across 14 test suites (12/12 settings configuration, 9/9 SLA escalation, 15/15 E2E flows, 6/6 SLA calculator, 12/12 frontend ops, 3/3 optimistic reconciliation, 49/49 core backend).
+  - TypeScript strict mode: **0 type errors** (`tsc --noEmit`).
+  - ESLint: **0 errors, 0 warnings** (`eslint .`).
+  - Prettier: **100% formatted** (`prettier --check .`).
+  - Production builds: API & Web bundles compile cleanly.
+  - Comprehensive documentation in `docs/SETTINGS_CONFIGURATION_REPORT.md`.
 - [x] **Step 6 Quality Gates & Verification**:
   - **94 / 94 automated tests passing** across 13 test suites (15/15 E2E flows, 9/9 SLA escalation, 6/6 SLA calculator, 10/10 frontend ops, 3/3 optimistic reconciliation, 51/51 core backend).
   - TypeScript strict mode: **0 type errors** (`tsc --noEmit`).

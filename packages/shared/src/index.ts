@@ -418,3 +418,173 @@ export const PaginationQuerySchema = z.object({
 export type PaginationQuery = z.infer<typeof PaginationQuerySchema>;
 
 export const UUIDSchema = z.string().uuid({ message: 'Must be a valid UUID' });
+
+// ==========================================
+// Settings & Configuration DTOs and Schemas
+// ==========================================
+
+export const SettingsCategory = {
+  GENERAL: 'general',
+  BRANDING: 'branding',
+  EMAIL: 'email',
+  SLA: 'sla',
+  WORKFLOW: 'workflow',
+  SECURITY: 'security',
+  NOTIFICATION: 'notification',
+} as const;
+export type SettingsCategory = (typeof SettingsCategory)[keyof typeof SettingsCategory];
+
+// A. General
+export const GeneralSettingsSchema = z.object({
+  appName: z.string().min(1).max(100),
+  orgName: z.string().min(1).max(100),
+  timezone: z.string().default('UTC'),
+  dateFormat: z.enum(['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY']).default('YYYY-MM-DD'),
+  timeFormat: z.enum(['24h', '12h']).default('24h'),
+  supportContact: z.string().email(),
+  maintenanceMode: z.boolean().default(false),
+});
+export type GeneralSettingsDTO = z.infer<typeof GeneralSettingsSchema>;
+
+// B. Branding
+export const BrandingSettingsSchema = z.object({
+  appName: z.string().min(1).max(100),
+  logoUrl: z.string().nullable().default(null),
+  faviconUrl: z.string().nullable().default(null),
+  browserTitle: z.string().min(1).max(150),
+  primaryColor: z
+    .string()
+    .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Must be a valid hex color code'),
+  accentColor: z
+    .string()
+    .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Must be a valid hex color code'),
+  themeDefault: z.enum(['light', 'dark', 'system']).default('light'),
+  sidebarTheme: z.enum(['light', 'dark']).default('light'),
+});
+export type BrandingSettingsDTO = z.infer<typeof BrandingSettingsSchema>;
+
+// C. Email
+export const EmailSettingsSchema = z.object({
+  smtpHost: z.string().default(''),
+  smtpPort: z.number().int().min(1).max(65535).default(587),
+  smtpUser: z.string().default(''),
+  smtpPassword: z.string().optional(),
+  smtpSecure: z.boolean().default(false),
+  senderName: z.string().min(1).default('Newtonite Alerts'),
+  senderEmail: z.string().email().or(z.literal('')).default(''),
+  enabled: z.boolean().default(false),
+  lastTestResult: z.enum(['NONE', 'SUCCESS', 'FAILED']).default('NONE'),
+  lastTestedAt: z.string().nullable().default(null),
+  lastTestError: z.string().nullable().default(null),
+});
+export type EmailSettingsDTO = z.infer<typeof EmailSettingsSchema>;
+
+export const SendTestEmailSchema = z.object({
+  recipientEmail: z.string().email('Recipient must be a valid email address'),
+});
+export type SendTestEmailInput = z.infer<typeof SendTestEmailSchema>;
+
+// D. SLA
+export const SlaSettingsSchema = z.object({
+  durations: z.object({
+    CRITICAL: z.number().int().min(15).max(43200),
+    URGENT: z.number().int().min(15).max(43200),
+    HIGH: z.number().int().min(15).max(43200),
+    MEDIUM: z.number().int().min(15).max(43200),
+    LOW: z.number().int().min(15).max(43200),
+  }),
+  warningBufferPercent: z.number().min(5).max(50).default(25),
+  scanIntervalMinutes: z.number().int().min(1).max(60).default(5),
+  escalationProcessingEnabled: z.boolean().default(true),
+});
+export type SlaSettingsDTO = z.infer<typeof SlaSettingsSchema>;
+
+// E. Workflow
+export const WorkflowSettingsSchema = z.object({
+  defaultPriority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT', 'CRITICAL']).default('MEDIUM'),
+  defaultType: z
+    .enum(['INCIDENT', 'CUSTOMER_ISSUE', 'PAYMENT', 'COMPLIANCE', 'TASK'])
+    .default('TASK'),
+  allowViewerComments: z.boolean().default(true),
+  requireDueDateForCritical: z.boolean().default(false),
+});
+export type WorkflowSettingsDTO = z.infer<typeof WorkflowSettingsSchema>;
+
+// F. Security
+export const SecuritySettingsSchema = z.object({
+  sessionTimeoutMinutes: z.number().int().min(15).max(1440).default(60),
+  minPasswordLength: z.number().int().min(8).max(32).default(8),
+  requireSpecialChar: z.boolean().default(true),
+  requireNumber: z.boolean().default(true),
+});
+export type SecuritySettingsDTO = z.infer<typeof SecuritySettingsSchema>;
+
+// G. Notifications
+export const NotificationSettingsSchema = z.object({
+  emailNotificationsEnabled: z.boolean().default(false),
+  notifyOnEscalation: z.boolean().default(true),
+  notifyOnAssignment: z.boolean().default(true),
+  notifyOnApproval: z.boolean().default(true),
+});
+export type NotificationSettingsDTO = z.infer<typeof NotificationSettingsSchema>;
+
+// Audit & Outbox DTOs
+export interface SettingAuditEventDTO {
+  id: string;
+  category: string;
+  action: string;
+  actorId: string | null;
+  actorName?: string | null;
+  actorEmail?: string | null;
+  diff: {
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
+  } | null;
+  createdAt: string;
+}
+
+export interface OutboxQueueStatsDTO {
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  deadLetter: number;
+  total: number;
+  recentFailures: Array<{
+    id: string;
+    eventType: string;
+    aggregateType: string;
+    aggregateId: string;
+    attempts: number;
+    maxAttempts: number;
+    lastError: string | null;
+    createdAt: string;
+    nextRetryAt: string;
+  }>;
+}
+
+export interface TeamMemberAdminDTO {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userIsActive: boolean;
+  systemRole: SystemRole;
+  role: TeamRole;
+  teamId: string;
+  teamName: string;
+  createdAt: string;
+}
+
+export const UpdateTeamMemberRoleSchema = z.object({
+  role: z.enum(['VIEWER', 'MEMBER', 'LEAD', 'ADMIN']),
+});
+
+export const AddTeamMemberSchema = z.object({
+  userId: z.string().uuid(),
+  role: z.enum(['VIEWER', 'MEMBER', 'LEAD', 'ADMIN']),
+});
+
+export const ToggleUserActiveSchema = z.object({
+  isActive: z.boolean(),
+});

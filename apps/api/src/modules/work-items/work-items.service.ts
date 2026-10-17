@@ -20,12 +20,14 @@ import {
   type WorkItemSummaryDTO,
   type ActivityEventDTO,
   type CommentDTO,
+  type WorkflowSettingsDTO,
 } from '@newtonite/shared';
 import type { AuthenticatedUser } from '../../middleware/authenticate';
 import { getUserRoleInTeam, hasMinimumRole } from '../../middleware/authorize';
 import type { Prisma } from '@prisma/client';
 import { outboxService } from '../outbox/outbox.service';
 import { calculateSlaStatus } from '../sla/sla-calculator';
+import { settingsService } from '../settings/settings.service';
 
 export class WorkItemsService {
   /**
@@ -287,14 +289,23 @@ export class WorkItemsService {
       }
     }
 
+    // Apply workflow configuration defaults
+    const workflowSettings = await settingsService.getSettings<WorkflowSettingsDTO>('workflow');
+    const priority = (input.priority || workflowSettings.defaultPriority || 'MEDIUM') as Priority;
+    const type = (input.type || workflowSettings.defaultType || 'TASK') as WorkItemType;
+
+    if (workflowSettings.requireDueDateForCritical && priority === 'CRITICAL' && !input.dueDate) {
+      throw new BadRequestError('Due date is required for CRITICAL items by system policy');
+    }
+
     // Atomic transaction: create item + append activity record
     const createdItem = await prisma.$transaction(async (tx) => {
       const item = await tx.workItem.create({
         data: {
           title: input.title,
           description: input.description,
-          type: input.type,
-          priority: input.priority || 'MEDIUM',
+          type,
+          priority,
           status: WorkItemStatus.BACKLOG,
           teamId: input.teamId,
           assigneeId: input.assigneeId || null,
