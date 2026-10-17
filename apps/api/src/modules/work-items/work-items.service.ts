@@ -843,6 +843,34 @@ export class WorkItemsService {
       updatedAt: comment.updatedAt.toISOString(),
     };
   }
+
+  /**
+   * Get comments for a work item
+   */
+  async getComments(user: AuthenticatedUser, itemId: string): Promise<CommentDTO[]> {
+    await this.getAccessibleItemOrThrow(user, itemId);
+
+    const comments = await prisma.comment.findMany({
+      where: { workItemId: itemId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        author: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    return comments.map((c) => ({
+      id: c.id,
+      workItemId: c.workItemId,
+      authorId: c.authorId,
+      authorName: c.author.name,
+      authorEmail: c.author.email,
+      body: c.body,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    }));
+  }
 }
 
 export const workItemsService = new WorkItemsService();

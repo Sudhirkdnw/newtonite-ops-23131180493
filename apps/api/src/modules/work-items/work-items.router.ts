@@ -136,3 +136,13 @@ workItemsRouter.post(
     }
   }
 );
+
+// 9. GET /api/v1/items/:id/comments — retrieve item comments
+workItemsRouter.get('/:id/comments', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const comments = await workItemsService.getComments(req.user!, req.params.id as string);
+    return sendSuccess(res, comments, 200);
+  } catch (error) {
+    next(error);
+  }
+});
