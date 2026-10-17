@@ -154,3 +154,114 @@ export const TypeBadge: React.FC<TypeBadgeProps> = ({ type }) => {
     </span>
   );
 };
+
+interface SlaBadgeProps {
+  sla?: {
+    status: 'HEALTHY' | 'AT_RISK' | 'BREACHED' | 'RESOLVED' | string;
+    isBreached?: boolean;
+    isAtRisk?: boolean;
+    timeRemainingMs?: number;
+    targetDeadline?: string;
+  };
+}
+
+export const SlaBadge: React.FC<SlaBadgeProps> = ({ sla }) => {
+  if (!sla) return null;
+
+  if (sla.status === 'RESOLVED') {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.3rem',
+          padding: '0.15rem 0.5rem',
+          borderRadius: '4px',
+          fontSize: '0.72rem',
+          fontWeight: 650,
+          backgroundColor: '#f1f5f9',
+          color: '#475569',
+          border: '1px solid #cbd5e1',
+        }}
+      >
+        <span>✓</span> SLA Resolved
+      </span>
+    );
+  }
+
+  if (sla.status === 'BREACHED') {
+    const overdueMinutes = Math.abs(Math.round((sla.timeRemainingMs ?? 0) / (60 * 1000)));
+    const overdueText =
+      overdueMinutes > 60
+        ? `${Math.round(overdueMinutes / 60)}h overdue`
+        : `${overdueMinutes}m overdue`;
+
+    return (
+      <span
+        id="badge-sla-breached"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.3rem',
+          padding: '0.15rem 0.5rem',
+          borderRadius: '4px',
+          fontSize: '0.72rem',
+          fontWeight: 750,
+          backgroundColor: '#fef2f2',
+          color: '#991b1b',
+          border: '1px solid #f87171',
+        }}
+      >
+        <span style={{ fontSize: '0.8rem' }}>🚨</span> Breached ({overdueText})
+      </span>
+    );
+  }
+
+  if (sla.status === 'AT_RISK') {
+    const remainingMinutes = Math.max(0, Math.round((sla.timeRemainingMs ?? 0) / (60 * 1000)));
+    const remainingText =
+      remainingMinutes > 60
+        ? `${Math.round(remainingMinutes / 60)}h left`
+        : `${remainingMinutes}m left`;
+
+    return (
+      <span
+        id="badge-sla-at-risk"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.3rem',
+          padding: '0.15rem 0.5rem',
+          borderRadius: '4px',
+          fontSize: '0.72rem',
+          fontWeight: 750,
+          backgroundColor: '#fffbeb',
+          color: '#b45309',
+          border: '1px solid #fde68a',
+        }}
+      >
+        <span style={{ fontSize: '0.8rem' }}>⚠️</span> At Risk ({remainingText})
+      </span>
+    );
+  }
+
+  return (
+    <span
+      id="badge-sla-healthy"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.3rem',
+        padding: '0.15rem 0.5rem',
+        borderRadius: '4px',
+        fontSize: '0.72rem',
+        fontWeight: 650,
+        backgroundColor: '#f0fdf4',
+        color: '#166534',
+        border: '1px solid #bbf7d0',
+      }}
+    >
+      <span>⏱️</span> Within SLA
+    </span>
+  );
+};

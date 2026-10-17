@@ -37,6 +37,7 @@ export class OutboxWorker {
     this.handlers.set('WORK_ITEM_CLAIMED', defaultLogHandler);
     this.handlers.set('WORK_ITEM_UPDATED', defaultLogHandler);
     this.handlers.set('WORK_ITEM_STATUS_CHANGED', defaultLogHandler);
+    this.handlers.set('WORK_ITEM_ESCALATED', defaultLogHandler);
   }
 
   /**

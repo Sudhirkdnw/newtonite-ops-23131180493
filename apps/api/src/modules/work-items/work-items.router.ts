@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { workItemsService } from './work-items.service';
+import { slaService } from '../sla/sla.service';
 import { authenticate } from '../../middleware/authenticate';
 import { idempotencyMiddleware } from '../../middleware/idempotency';
 import { validateRequest } from '../../shared/validation/validate';
@@ -51,6 +52,29 @@ workItemsRouter.get(
     }
   }
 );
+
+// 2.1 GET /api/v1/items/sla/overview — team-scoped SLA overview & urgent queue
+workItemsRouter.get('/sla/overview', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const teamId = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
+    const overview = await slaService.getTeamSlaOverview(req.user!, teamId);
+    return sendSuccess(res, overview, 200);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 2.2 POST /api/v1/items/sla/escalate — run SLA scan and idempotent escalation
+workItemsRouter.post('/sla/escalate', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const teamId = typeof req.body?.teamId === 'string' ? req.body.teamId : undefined;
+    const now = req.body?.now ? new Date(req.body.now) : undefined;
+    const result = await slaService.scanAndEscalate({ now, teamId });
+    return sendSuccess(res, result, 200);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // 3. GET /api/v1/items/:id — retrieve an accessible item
 workItemsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {

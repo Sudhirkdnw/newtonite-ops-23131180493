@@ -57,6 +57,7 @@ export const ActivityAction = {
   COMMENT_ADDED: 'COMMENT_ADDED',
   WORKFLOW_APPROVED: 'WORKFLOW_APPROVED',
   UPDATED: 'UPDATED',
+  ESCALATED: 'ESCALATED',
 } as const;
 export type ActivityAction = (typeof ActivityAction)[keyof typeof ActivityAction];
 
@@ -82,6 +83,76 @@ export const ALLOWED_TRANSITIONS: Record<WorkItemStatus, readonly WorkItemStatus
   COMPLETED: [WorkItemStatus.IN_PROGRESS],
   CANCELLED: [WorkItemStatus.BACKLOG],
 };
+
+// ==========================================
+// Service Level Agreement (SLA) Configuration & Types
+// ==========================================
+
+export const SlaStatus = {
+  HEALTHY: 'HEALTHY',
+  AT_RISK: 'AT_RISK',
+  BREACHED: 'BREACHED',
+  RESOLVED: 'RESOLVED',
+} as const;
+export type SlaStatus = (typeof SlaStatus)[keyof typeof SlaStatus];
+
+export interface SlaPriorityConfig {
+  durationHours: number;
+  durationMs: number;
+  warningThresholdRatio: number; // e.g. 0.25 (last 25% of window is AT_RISK)
+  maxWarningBufferMs: number; // e.g. 30 mins
+}
+
+export const SLA_CONFIG: Record<Priority, SlaPriorityConfig> = {
+  [Priority.CRITICAL]: {
+    durationHours: 2,
+    durationMs: 2 * 60 * 60 * 1000,
+    warningThresholdRatio: 0.25, // 30 mins remaining
+    maxWarningBufferMs: 30 * 60 * 1000,
+  },
+  [Priority.URGENT]: {
+    durationHours: 6,
+    durationMs: 6 * 60 * 60 * 1000,
+    warningThresholdRatio: 0.25, // 90 mins remaining
+    maxWarningBufferMs: 90 * 60 * 1000,
+  },
+  [Priority.HIGH]: {
+    durationHours: 24,
+    durationMs: 24 * 60 * 60 * 1000,
+    warningThresholdRatio: 0.25, // 6 hours remaining
+    maxWarningBufferMs: 6 * 60 * 60 * 1000,
+  },
+  [Priority.MEDIUM]: {
+    durationHours: 72,
+    durationMs: 72 * 60 * 60 * 1000,
+    warningThresholdRatio: 0.25, // 18 hours remaining
+    maxWarningBufferMs: 18 * 60 * 60 * 1000,
+  },
+  [Priority.LOW]: {
+    durationHours: 168,
+    durationMs: 168 * 60 * 60 * 1000,
+    warningThresholdRatio: 0.25, // 42 hours remaining
+    maxWarningBufferMs: 24 * 60 * 60 * 1000,
+  },
+};
+
+export interface SlaMetadata {
+  targetDeadline: string;
+  slaDurationMs: number;
+  timeRemainingMs: number;
+  status: SlaStatus;
+  isBreached: boolean;
+  isAtRisk: boolean;
+  lastEscalationStatus: string;
+}
+
+export interface SlaOverviewDTO {
+  totalActive: number;
+  healthyCount: number;
+  atRiskCount: number;
+  breachedCount: number;
+  urgentQueue: WorkItemSummaryDTO[];
+}
 
 // ==========================================
 // Standard API Envelope Types
@@ -301,6 +372,8 @@ export interface WorkItemSummaryDTO {
   dueDate: string | null;
   completedAt: string | null;
   version: number;
+  lastEscalationStatus?: string;
+  sla?: SlaMetadata;
   createdAt: string;
   updatedAt: string;
   _count?: {

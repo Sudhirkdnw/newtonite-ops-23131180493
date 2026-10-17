@@ -376,3 +376,32 @@ Enterprise operational backlogs can contain thousands of incidents and tasks. Do
      4. **Work Requiring Attention**: Filtered by `BLOCKED` status or untriaged backlog items.
      5. **Recent Work Items**: Latest audited operational records.
    - Zero fabricated metrics or mock tasks are used.
+
+---
+
+## ADR 016: SLA Deadline Derivation, Idempotent Escalation & Deterministic Clocks
+
+### Context
+
+Operational response systems require deterministic tracking of contractual commitments. Without automated SLA monitoring and escalation, critical incidents drift past resolution windows unnoticed. Furthermore, background escalation scanners risk producing duplicate audit events and notification floods if multiple workers run concurrently or jobs are retried.
+
+### Decision
+
+1. **Deterministic SLA Deadline Derivation**:
+   - Operational deadlines are computed on the server based on `createdAt + SLA_CONFIG[priority].durationMs` (`CRITICAL`: 2h, `URGENT`: 6h, `HIGH`: 24h, `MEDIUM`: 72h, `LOW`: 168h).
+   - If an explicit `dueDate` was designated by an operator, the target resolution deadline is `min(dueDate, slaDeadline)`. This guarantees that user-scheduled deadlines are respected without permitting operators to extend contractual SLA commitments. The database `dueDate` is never overwritten.
+   - Status categorization:
+     - `RESOLVED`: Terminal states (`COMPLETED`, `CANCELLED`). Excluded from active escalations.
+     - `BREACHED`: Active items past target deadline (`timeRemainingMs <= 0`).
+     - `AT_RISK`: Active items within the warning threshold (remaining time <= 25% of SLA duration or <= 30 minutes).
+     - `HEALTHY`: Active items with ample resolution buffer.
+2. **Idempotent Atomic Conditional Escalation**:
+   - `WorkItem` stores `lastEscalationStatus String @default("NONE")`.
+   - When transitioning to `AT_RISK` or `BREACHED`, the service executes an atomic conditional update (`WHERE id = :id AND lastEscalationStatus = :oldStatus`) inside a Prisma transaction.
+   - If the item was already escalated to that state, the update affects 0 rows, resulting in an immediate no-op.
+   - Exactly one immutable `ActivityEvent (ESCALATED)` and one `OutboxJob (WORK_ITEM_ESCALATED)` are written per escalation level, guaranteeing zero duplicate alerts across retries and concurrent workers.
+3. **Injectable Deterministic Clock**:
+   - Calculation functions and scanner methods accept an optional `now: Date = new Date()` parameter.
+   - This enables thorough, instantaneous unit and integration testing without relying on brittle `setTimeout` delays or wall-clock timing variations.
+4. **Team-Scoped Authorization**:
+   - Overview metrics (`GET /api/v1/items/sla/overview`) strictly scope calculations and urgent queues to the authenticated user's active team memberships, returning `404 Not Found` for cross-team probes.

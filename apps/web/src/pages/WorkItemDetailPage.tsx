@@ -7,7 +7,7 @@ import {
   addComment,
 } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { StatusBadge, PriorityBadge, TypeBadge } from '../components/ui/Badge';
+import { StatusBadge, PriorityBadge, TypeBadge, SlaBadge } from '../components/ui/Badge';
 import { TableSkeleton } from '../components/ui/LoadingSkeleton';
 
 interface WorkItemDetailPageProps {
@@ -239,11 +239,18 @@ export const WorkItemDetailPage: React.FC<WorkItemDetailPageProps> = ({
       >
         {/* Badges & Version Row */}
         <div
-          style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.75rem' }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.6rem',
+            marginBottom: '0.75rem',
+            flexWrap: 'wrap',
+          }}
         >
           <PriorityBadge priority={item.priority} />
           <StatusBadge status={item.status} />
           <TypeBadge type={item.type} />
+          <SlaBadge sla={item.sla} />
           <span
             style={{
               fontSize: '0.725rem',
@@ -364,6 +371,15 @@ export const WorkItemDetailPage: React.FC<WorkItemDetailPageProps> = ({
               }}
             >
               {item.dueDate ? new Date(item.dueDate).toLocaleString() : 'Not Set'}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ color: 'var(--text-subtle)', fontSize: '0.725rem', fontWeight: 600 }}>
+              SLA Commitment
+            </div>
+            <div style={{ marginTop: '0.2rem' }}>
+              <SlaBadge sla={item.sla} />
             </div>
           </div>
 

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import type { WorkItemSummaryDTO } from '@newtonite/shared';
 import { fetchWorkItems } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { StatusBadge, PriorityBadge } from '../components/ui/Badge';
+import { StatusBadge, PriorityBadge, SlaBadge } from '../components/ui/Badge';
 import { CardSkeleton } from '../components/ui/LoadingSkeleton';
 import { EmptyState } from '../components/ui/EmptyState';
 
@@ -29,6 +29,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [recentItems, setRecentItems] = useState<WorkItemSummaryDTO[]>([]);
   const [attentionRequired, setAttentionRequired] = useState<WorkItemSummaryDTO[]>([]);
 
+  // Operational SLA Metrics & Urgent Escalation Queue
+  const [slaMetrics, setSlaMetrics] = useState<{
+    totalActive: number;
+    healthy: number;
+    atRisk: number;
+    breached: number;
+  }>({ totalActive: 0, healthy: 0, atRisk: 0, breached: 0 });
+  const [urgentSlaQueue, setUrgentSlaQueue] = useState<WorkItemSummaryDTO[]>([]);
+
   const loadDashboardData = useCallback(async () => {
     if (!token || !currentUser) return;
 
@@ -39,6 +48,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       // 1. Fetch recent items across accessible teams (limit 50 to populate queues)
       const res = await fetchWorkItems(token, { limit: 50 });
       const allItems = res.items;
+
+      // Calculate SLA Metrics across active items
+      const activeItems = allItems.filter(
+        (i) => i.status !== 'COMPLETED' && i.status !== 'CANCELLED'
+      );
+      const healthy = activeItems.filter((i) => i.sla?.status === 'HEALTHY').length;
+      const atRisk = activeItems.filter((i) => i.sla?.status === 'AT_RISK').length;
+      const breached = activeItems.filter((i) => i.sla?.status === 'BREACHED').length;
+      setSlaMetrics({
+        totalActive: activeItems.length,
+        healthy,
+        atRisk,
+        breached,
+      });
+
+      // Urgent SLA Queue: Breached or At Risk active items
+      const urgentSla = activeItems
+        .filter((i) => i.sla?.isBreached || i.sla?.isAtRisk)
+        .sort((a, b) => (a.sla?.timeRemainingMs ?? 0) - (b.sla?.timeRemainingMs ?? 0));
+      setUrgentSlaQueue(urgentSla);
 
       // Section 1: Assigned to Me
       const myItems = allItems.filter(
@@ -118,9 +147,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               marginBottom: '0.5rem',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}
+            >
               <PriorityBadge priority={item.priority} />
               <StatusBadge status={item.status} />
+              <SlaBadge sla={item.sla} />
             </div>
             <span
               style={{
@@ -307,6 +339,170 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
       {!isLoading && !error && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+          {/* SLA Performance Overview Banner */}
+          <div
+            id="sla-performance-banner"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '1rem',
+            }}
+          >
+            {/* Card 1: Total Active */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.25rem',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                Active Operations
+              </div>
+              <div
+                style={{
+                  fontSize: '1.65rem',
+                  fontWeight: 800,
+                  color: 'var(--text-main)',
+                  marginTop: '0.25rem',
+                }}
+              >
+                {slaMetrics.totalActive}
+              </div>
+              <div
+                style={{ fontSize: '0.725rem', color: 'var(--text-subtle)', marginTop: '0.2rem' }}
+              >
+                Under active management
+              </div>
+            </div>
+
+            {/* Card 2: Healthy SLA */}
+            <div
+              style={{
+                backgroundColor: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.25rem',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534' }}>
+                Within SLA (Healthy)
+              </div>
+              <div
+                style={{
+                  fontSize: '1.65rem',
+                  fontWeight: 800,
+                  color: '#15803d',
+                  marginTop: '0.25rem',
+                }}
+              >
+                {slaMetrics.healthy}
+              </div>
+              <div style={{ fontSize: '0.725rem', color: '#166534', marginTop: '0.2rem' }}>
+                On track for resolution
+              </div>
+            </div>
+
+            {/* Card 3: SLA At Risk */}
+            <div
+              style={{
+                backgroundColor: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.25rem',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#b45309' }}>
+                SLA At Risk (&le; 25% Left)
+              </div>
+              <div
+                style={{
+                  fontSize: '1.65rem',
+                  fontWeight: 800,
+                  color: '#d97706',
+                  marginTop: '0.25rem',
+                }}
+              >
+                {slaMetrics.atRisk}
+              </div>
+              <div style={{ fontSize: '0.725rem', color: '#92400e', marginTop: '0.2rem' }}>
+                Approaching breach threshold
+              </div>
+            </div>
+
+            {/* Card 4: SLA Breached */}
+            <div
+              style={{
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.25rem',
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b' }}>
+                SLA Breached (Overdue)
+              </div>
+              <div
+                style={{
+                  fontSize: '1.65rem',
+                  fontWeight: 800,
+                  color: '#dc2626',
+                  marginTop: '0.25rem',
+                }}
+              >
+                {slaMetrics.breached}
+              </div>
+              <div style={{ fontSize: '0.725rem', color: '#b91c1c', marginTop: '0.2rem' }}>
+                Immediate escalation required
+              </div>
+            </div>
+          </div>
+
+          {/* Urgent SLA Escalations Queue (Shown when items are breached or at risk) */}
+          {urgentSlaQueue.length > 0 && (
+            <section id="section-sla-escalations">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  marginBottom: '0.85rem',
+                }}
+              >
+                <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#991b1b' }}>
+                  🚨 SLA Escalations & Urgent Attention
+                </h2>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    fontWeight: 800,
+                    backgroundColor: '#fee2e2',
+                    color: '#991b1b',
+                    padding: '0.1rem 0.5rem',
+                    borderRadius: '999px',
+                    border: '1px solid #fecaca',
+                  }}
+                >
+                  {urgentSlaQueue.length}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  gap: '1rem',
+                }}
+              >
+                {urgentSlaQueue.map((item) => renderItemCard(item, true))}
+              </div>
+            </section>
+          )}
+
           {/* Section 1: Assigned to Me */}
           <section id="section-assigned-to-me">
             <div

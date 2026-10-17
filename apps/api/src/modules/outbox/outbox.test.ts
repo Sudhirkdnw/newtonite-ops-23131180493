@@ -110,7 +110,7 @@ describe('Critical Behaviour 6: Transactional Outbox Pattern & Reliable Processi
     });
 
     // Run one worker batch
-    const result = await worker.processBatch(10);
+    const result = await worker.processBatch(100);
     expect(result.processed).toBeGreaterThanOrEqual(1);
     expect(handlerInvoked).toBe(true);
     expect((handledPayload as unknown as Record<string, unknown>)?.message).toBe('hello outbox');
@@ -123,7 +123,7 @@ describe('Critical Behaviour 6: Transactional Outbox Pattern & Reliable Processi
 
     // Running processBatch again does NOT re-process completed job
     handlerInvoked = false;
-    await worker.processBatch(10);
+    await worker.processBatch(100);
     expect(handlerInvoked).toBe(false);
   });
 
@@ -145,7 +145,7 @@ describe('Critical Behaviour 6: Transactional Outbox Pattern & Reliable Processi
     });
 
     // Attempt 1 fails
-    await worker.processBatch(10);
+    await worker.processBatch(100);
 
     const jobAfterAttempt1 = await prisma.outboxJob.findUnique({ where: { id: jobId } });
     expect(jobAfterAttempt1?.status).toBe(OutboxJobStatus.PENDING);
@@ -172,7 +172,7 @@ describe('Critical Behaviour 6: Transactional Outbox Pattern & Reliable Processi
     });
 
     // Attempt 1 fails and exhausts maxAttempts (1 >= 1)
-    await worker.processBatch(10);
+    await worker.processBatch(100);
 
     const terminalJob = await prisma.outboxJob.findUnique({ where: { id: jobId } });
     expect(terminalJob?.status).toBe(OutboxJobStatus.FAILED);

@@ -158,7 +158,10 @@ or `{ "success": false, "error": { "code": "...", "message": "...", "details": [
 | `POST`  | `/api/v1/items/:id/claim`      | Yes (Bearer)  | `MEMBER`     | Atomically claim work item (`409 Conflict` if already claimed)     |
 | `POST`  | `/api/v1/items/:id/transition` | Yes (Bearer)  | `MEMBER`\*   | Transition status (`IN_REVIEW -> COMPLETED` requires `LEAD`)       |
 | `GET`   | `/api/v1/items/:id/activity`   | Yes (Bearer)  | `VIEWER`     | Retrieve audit activity timeline for an item                       |
+| `GET`   | `/api/v1/items/:id/comments`   | Yes (Bearer)  | `VIEWER`     | List chronological discussion comments for an item                 |
 | `POST`  | `/api/v1/items/:id/comments`   | Yes (Bearer)  | `MEMBER`     | Append a discussion comment to an item                             |
+| `GET`   | `/api/v1/items/sla/overview`   | Yes (Bearer)  | `VIEWER`     | Retrieve team-scoped SLA metrics, counts & urgent escalation queue |
+| `POST`  | `/api/v1/items/sla/escalate`   | Yes (Bearer)  | `MEMBER`     | Trigger manual or scheduled SLA escalation scan cycle              |
 
 \* _Note: Approving an item from `IN_REVIEW` to `COMPLETED` strictly requires `LEAD` or `ADMIN` role in that team._
 
@@ -269,7 +272,7 @@ _(If the item has already been modified to version 3+, returns `HTTP 409 Conflic
 
 ## 8. Current Implementation Status
 
-### Completed (Step 1 Foundation + Step 2 Core Operations + Step 3 Critical Behaviours Beyond CRUD):
+### Completed (Steps 1–6: Foundation, Core APIs, Critical Behaviours, Dashboard Frontend, E2E Integration & SLA Escalation Engine):
 
 - [x] **Monorepo Architecture**: Single unified root `package.json` and single `node_modules` running Express backend (`apps/api`), Vite frontend (`apps/web`), and shared contracts (`packages/shared`).
 - [x] **PostgreSQL & Prisma Schema**: Relational models for `User`, `Team`, `Membership`, `WorkItem`, `ActivityEvent`, `Comment`, `IdempotencyKey`, and `OutboxJob`.
@@ -291,12 +294,39 @@ _(If the item has already been modified to version 3+, returns `HTTP 409 Conflic
   - Safe replay of cached responses (`X-Cache-Lookup: HIT`) for network retries and duplicate submissions.
   - Protection against key reuse with altered payloads (`HTTP 409 Conflict`).
 - [x] **Critical Behaviour 4 — Server-Enforced Workflow State Machine**: Centralized transition validator with Lead-only approval gates and immutable audit logs.
-- [x] **Critical Behaviour 5 — Multi-Team Resource-Level Authorization**: Strict boundary enforcement and 404 isolation across all 8 REST endpoints.
+- [x] **Critical Behaviour 5 — Multi-Team Resource-Level Authorization**: Strict boundary enforcement and 404 isolation across all 9 REST endpoints.
 - [x] **Critical Behaviour 6 — Transactional Outbox Pattern**:
   - Outbox jobs scheduled atomically in same Prisma transaction as business entity.
   - Asynchronous `OutboxWorker` claiming jobs with atomic conditional lock, exponential backoff retries, and terminal dead-letter state tracking.
 - [x] **Critical Behaviour 7 — Optimistic UI Reconciliation Pattern**:
   - Pure `OptimisticReconciler` and `useOptimisticWorkItem` hook implementing snapshot preservation, optimistic local update, automatic rollback on 409/403, and server reconciliation.
-- [x] **Test Quality & Gate Assurance**: 52 integration tests passing across 9 test suites with 100% test success rate.
+- [x] **Operations Dashboard Frontend (Step 4)**:
+  - React 18 + TypeScript + Vite with token-based CSS design system (zero Tailwind, bespoke enterprise UI).
+  - Dark mode navigation with active team switcher, profile menu, and live role badge.
+  - Operations overview with real-time KPI metrics, critical queue cards, and recent timeline.
+  - Server-side filtered & keyset cursor paginated work items catalog (`limit`, `cursor`, `status`, `priority`, `type`, `search`).
+  - Full item detail view with inline optimistic editor, state transition modal, claim action, comment discussion feed, and immutable activity timeline.
+- [x] **Critical Behaviour 8 — Production-Oriented SLA & Escalation Engine (Step 6)**:
+  - Configurable SLA durations by priority (`CRITICAL: 2h`, `URGENT: 6h`, `HIGH: 24h`, `MEDIUM: 72h`, `LOW: 168h`).
+  - Deterministic target deadline calculation: `min(dueDate, slaDeadline)` ensuring operator-specified due dates are respected without permitting contractual SLA extension.
+  - Idempotent atomic conditional escalation updates (`WHERE id = :id AND lastEscalationStatus = :oldStatus`) inside Prisma transactions.
+  - Asynchronous event emission via Transactional Outbox (`WORK_ITEM_ESCALATED`) and immutable audit timeline logs (`ActivityAction.ESCALATED`).
+  - Terminal state exclusion: closed items (`COMPLETED`, `CANCELLED`) never trigger active escalations.
+  - Dashboard integration: SLA KPI performance banner, Urgent Escalation queue, and countdown badges.
+  - Team-scoped authorization returning `404 Not Found` for cross-team probes.
+- [x] **Step 6 Quality Gates & Verification**:
+  - **94 / 94 automated tests passing** across 13 test suites (15/15 E2E flows, 9/9 SLA escalation, 6/6 SLA calculator, 10/10 frontend ops, 3/3 optimistic reconciliation, 51/51 core backend).
+  - TypeScript strict mode: **0 type errors** (`tsc --noEmit`).
+  - ESLint: **0 errors, 0 warnings** (`eslint .`).
+  - Prettier: **100% formatted** (`prettier --check .`).
+  - Production builds: API & Web bundles compile cleanly.
+  - Comprehensive documentation in `docs/SLA_ESCALATION_REPORT.md`.
+- [x] **Step 5 Full-Stack Integration & Quality Gates**:
+  - **79 / 79 automated tests passing** across 11 test suites (15/15 E2E user flows, 10/10 frontend operations, 3/3 optimistic reconciliation, 49/49 backend domain & concurrency suites).
+  - TypeScript strict mode: **0 type errors** (`tsc --noEmit`).
+  - ESLint: **0 errors, 0 warnings** (`eslint .`).
+  - Prettier: **100% formatted** (`prettier --check .`).
+  - Production builds: API & Web bundles compile cleanly.
+  - Comprehensive documentation in `docs/END_TO_END_TEST_REPORT.md`.
 
 _Refer to [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) and [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md) for architectural records._

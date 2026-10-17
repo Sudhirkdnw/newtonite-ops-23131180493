@@ -7,7 +7,9 @@ import {
 } from '../../shared/errors/AppError';
 import {
   TeamRole,
+  Priority,
   WorkItemStatus,
+  WorkItemType,
   ActivityAction,
   ALLOWED_TRANSITIONS,
   type CreateWorkItemInput,
@@ -23,8 +25,69 @@ import type { AuthenticatedUser } from '../../middleware/authenticate';
 import { getUserRoleInTeam, hasMinimumRole } from '../../middleware/authorize';
 import type { Prisma } from '@prisma/client';
 import { outboxService } from '../outbox/outbox.service';
+import { calculateSlaStatus } from '../sla/sla-calculator';
 
 export class WorkItemsService {
+  /**
+   * Helper to format WorkItem entity into complete DTO with SLA calculations
+   */
+  private mapToDTO(
+    item: {
+      id: string;
+      title: string;
+      description: string | null;
+      type: WorkItemType | string;
+      priority: Priority | string;
+      status: WorkItemStatus | string;
+      teamId: string;
+      team?: { name: string } | null;
+      assigneeId: string | null;
+      assignee?: { name: string } | null;
+      creatorId: string;
+      creator?: { name: string } | null;
+      dueDate?: Date | string | null;
+      completedAt?: Date | string | null;
+      version: number;
+      lastEscalationStatus?: string | null;
+      createdAt: Date | string;
+      updatedAt: Date | string;
+      _count?: { comments: number; activities: number };
+    },
+    count?: { comments: number; activities: number }
+  ): WorkItemSummaryDTO {
+    const sla = calculateSlaStatus({
+      priority: item.priority as Priority,
+      createdAt: item.createdAt,
+      dueDate: item.dueDate,
+      status: item.status as WorkItemStatus,
+      completedAt: item.completedAt,
+      lastEscalationStatus: item.lastEscalationStatus,
+    });
+
+    return {
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      type: item.type as WorkItemType,
+      priority: item.priority as Priority,
+      status: item.status as WorkItemStatus,
+      teamId: item.teamId,
+      teamName: item.team?.name,
+      assigneeId: item.assigneeId,
+      assigneeName: item.assignee?.name || null,
+      creatorId: item.creatorId,
+      creatorName: item.creator?.name,
+      dueDate: item.dueDate ? new Date(item.dueDate).toISOString() : null,
+      completedAt: item.completedAt ? new Date(item.completedAt).toISOString() : null,
+      version: item.version,
+      lastEscalationStatus: item.lastEscalationStatus || 'NONE',
+      sla,
+      createdAt: new Date(item.createdAt).toISOString(),
+      updatedAt: new Date(item.updatedAt).toISOString(),
+      ...(count ? { _count: count } : item._count ? { _count: item._count } : {}),
+    };
+  }
+
   /**
    * Helper to decode and encode pagination cursor
    */
@@ -165,26 +228,7 @@ export class WorkItemsService {
         ? this.encodeCursor(itemsToReturn[itemsToReturn.length - 1])
         : null;
 
-    const dtos: WorkItemSummaryDTO[] = itemsToReturn.map((item) => ({
-      id: item.id,
-      title: item.title,
-      description: item.description,
-      type: item.type,
-      priority: item.priority,
-      status: item.status,
-      teamId: item.teamId,
-      teamName: item.team.name,
-      assigneeId: item.assigneeId,
-      assigneeName: item.assignee?.name || null,
-      creatorId: item.creatorId,
-      creatorName: item.creator.name,
-      dueDate: item.dueDate ? item.dueDate.toISOString() : null,
-      completedAt: item.completedAt ? item.completedAt.toISOString() : null,
-      version: item.version,
-      createdAt: item.createdAt.toISOString(),
-      updatedAt: item.updatedAt.toISOString(),
-      _count: item._count,
-    }));
+    const dtos: WorkItemSummaryDTO[] = itemsToReturn.map((item) => this.mapToDTO(item));
 
     return {
       items: dtos,
@@ -208,26 +252,7 @@ export class WorkItemsService {
       },
     });
 
-    return {
-      id: item.id,
-      title: item.title,
-      description: item.description,
-      type: item.type,
-      priority: item.priority,
-      status: item.status,
-      teamId: item.teamId,
-      teamName: item.team.name,
-      assigneeId: item.assigneeId,
-      assigneeName: item.assignee?.name || null,
-      creatorId: item.creatorId,
-      creatorName: item.creator.name,
-      dueDate: item.dueDate ? item.dueDate.toISOString() : null,
-      completedAt: item.completedAt ? item.completedAt.toISOString() : null,
-      version: item.version,
-      createdAt: item.createdAt.toISOString(),
-      updatedAt: item.updatedAt.toISOString(),
-      _count: counts?._count,
-    };
+    return this.mapToDTO(item, counts?._count);
   }
 
   /**
@@ -316,25 +341,7 @@ export class WorkItemsService {
       return item;
     });
 
-    return {
-      id: createdItem.id,
-      title: createdItem.title,
-      description: createdItem.description,
-      type: createdItem.type,
-      priority: createdItem.priority,
-      status: createdItem.status,
-      teamId: createdItem.teamId,
-      teamName: createdItem.team.name,
-      assigneeId: createdItem.assigneeId,
-      assigneeName: createdItem.assignee?.name || null,
-      creatorId: createdItem.creatorId,
-      creatorName: createdItem.creator.name,
-      dueDate: createdItem.dueDate ? createdItem.dueDate.toISOString() : null,
-      completedAt: null,
-      version: createdItem.version,
-      createdAt: createdItem.createdAt.toISOString(),
-      updatedAt: createdItem.updatedAt.toISOString(),
-    };
+    return this.mapToDTO(createdItem);
   }
 
   /**
@@ -485,25 +492,7 @@ export class WorkItemsService {
       return res;
     });
 
-    return {
-      id: updated.id,
-      title: updated.title,
-      description: updated.description,
-      type: updated.type,
-      priority: updated.priority,
-      status: updated.status,
-      teamId: updated.teamId,
-      teamName: updated.team.name,
-      assigneeId: updated.assigneeId,
-      assigneeName: updated.assignee?.name || null,
-      creatorId: updated.creatorId,
-      creatorName: updated.creator.name,
-      dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
-      completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
-      version: updated.version,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+    return this.mapToDTO(updated);
   }
 
   /**
@@ -615,25 +604,7 @@ export class WorkItemsService {
       return res;
     });
 
-    return {
-      id: updated.id,
-      title: updated.title,
-      description: updated.description,
-      type: updated.type,
-      priority: updated.priority,
-      status: updated.status,
-      teamId: updated.teamId,
-      teamName: updated.team.name,
-      assigneeId: updated.assigneeId,
-      assigneeName: updated.assignee?.name || null,
-      creatorId: updated.creatorId,
-      creatorName: updated.creator.name,
-      dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
-      completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
-      version: updated.version,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+    return this.mapToDTO(updated);
   }
 
   /**
@@ -733,25 +704,7 @@ export class WorkItemsService {
       return res;
     });
 
-    return {
-      id: updated.id,
-      title: updated.title,
-      description: updated.description,
-      type: updated.type,
-      priority: updated.priority,
-      status: updated.status,
-      teamId: updated.teamId,
-      teamName: updated.team.name,
-      assigneeId: updated.assigneeId,
-      assigneeName: updated.assignee?.name || null,
-      creatorId: updated.creatorId,
-      creatorName: updated.creator.name,
-      dueDate: updated.dueDate ? updated.dueDate.toISOString() : null,
-      completedAt: updated.completedAt ? updated.completedAt.toISOString() : null,
-      version: updated.version,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+    return this.mapToDTO(updated);
   }
 
   /**

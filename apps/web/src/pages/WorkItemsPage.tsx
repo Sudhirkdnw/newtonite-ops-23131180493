@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { WorkItemSummaryDTO } from '@newtonite/shared';
 import { fetchWorkItems } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { StatusBadge, PriorityBadge, TypeBadge } from '../components/ui/Badge';
+import { StatusBadge, PriorityBadge, TypeBadge, SlaBadge } from '../components/ui/Badge';
 import { TableSkeleton } from '../components/ui/LoadingSkeleton';
 import { EmptyState } from '../components/ui/EmptyState';
 
@@ -472,6 +472,7 @@ export const WorkItemsPage: React.FC<WorkItemsPageProps> = ({
                   >
                     <th style={{ padding: '0.75rem 1rem' }}>Priority</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Status</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>SLA Deadline</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Title & Scope</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Type</th>
                     <th style={{ padding: '0.75rem 1rem' }}>Assignee</th>
@@ -506,6 +507,9 @@ export const WorkItemsPage: React.FC<WorkItemsPageProps> = ({
                         </td>
                         <td style={{ padding: '0.75rem 1rem' }}>
                           <StatusBadge status={item.status} />
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <SlaBadge sla={item.sla} />
                         </td>
                         <td style={{ padding: '0.75rem 1rem', maxWidth: '320px' }}>
                           <div
