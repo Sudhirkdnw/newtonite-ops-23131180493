@@ -19,22 +19,20 @@ The system is engineered for resilience against race conditions, duplicate mutat
 newtonite-ops/
 ├── apps/
 │   ├── api/                   # Express + TypeScript REST API Engine
-│   │   ├── src/
-│   │   │   ├── config/        # Zod environment variable validation
-│   │   │   ├── middleware/    # Request ID, Logging, Error Handling
-│   │   │   ├── modules/       # Health, Auth, WorkItems, etc.
-│   │   │   ├── shared/        # Logger, Errors, HTTP, Database (Prisma)
-│   │   │   ├── app.ts         # Express app factory
-│   │   │   └── server.ts      # Server bootstrap with graceful shutdown
-│   │   └── package.json
+│   │   └── src/
+│   │       ├── config/        # Zod environment variable validation
+│   │       ├── middleware/    # Request ID, Logging, Error Handling
+│   │       ├── modules/       # Health, Auth, WorkItems, etc.
+│   │       ├── shared/        # Logger, Errors, HTTP, Database (Prisma)
+│   │       ├── app.ts         # Express app factory
+│   │       └── server.ts      # Server bootstrap with graceful shutdown
 │   └── web/                   # React + TypeScript + Vite Dashboard
-│       ├── src/
-│       │   ├── app/           # App root & CSS design system
-│       │   ├── services/      # API client
-│       │   └── types/         # Web types
-│       └── package.json
+│       └── src/
+│           ├── app/           # App root & CSS design system
+│           ├── services/      # API client
+│           └── types/         # Web types
 ├── packages/
-│   └── shared/                # Shared domain enums, Zod schemas, API types
+│   └── shared/                # Shared domain enums, Zod schemas, API types (src/index.ts)
 ├── prisma/
 │   ├── schema.prisma          # PostgreSQL relational schema
 │   ├── migrations/            # Versioned SQL migrations
@@ -98,19 +96,19 @@ npm run db:seed
 
 ## 5. Development & Testing Commands
 
-| Command                | Description                                                                            |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `npm run dev`          | Start backend API with hot-reload (`tsx watch`)                                        |
-| `npm run dev:api`      | Run backend API service                                                                |
-| `npm run dev:web`      | Start frontend Vite development server (`http://localhost:5173`)                       |
-| `npm run build`        | Build all workspace packages (`@newtonite/shared`, `@newtonite/api`, `@newtonite/web`) |
-| `npm run typecheck`    | Run strict TypeScript compiler verification across all projects                        |
-| `npm run lint`         | Run ESLint checks across monorepo                                                      |
-| `npm run format`       | Format codebase using Prettier                                                         |
-| `npm run format:check` | Verify codebase formatting against Prettier rules                                      |
-| `npm test`             | Run Vitest test suites                                                                 |
-| `npm run db:migrate`   | Apply Prisma database migrations                                                       |
-| `npm run db:seed`      | Execute deterministic database seed script                                             |
+| Command                | Description                                                       |
+| ---------------------- | ----------------------------------------------------------------- |
+| `npm run dev`          | Start both API backend and Web frontend simultaneously            |
+| `npm run dev:api`      | Run backend API service with hot-reload (`http://localhost:4000`) |
+| `npm run dev:web`      | Start frontend Vite development server (`http://localhost:5173`)  |
+| `npm run build`        | Build both backend API and frontend Web production bundles        |
+| `npm run typecheck`    | Run strict TypeScript compiler verification across all projects   |
+| `npm run lint`         | Run ESLint checks across monorepo                                 |
+| `npm run format`       | Format codebase using Prettier                                    |
+| `npm run format:check` | Verify codebase formatting against Prettier rules                 |
+| `npm test`             | Run Vitest test suites                                            |
+| `npm run db:migrate`   | Apply Prisma database migrations                                  |
+| `npm run db:seed`      | Execute deterministic database seed script                        |
 
 ---
 

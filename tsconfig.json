@@ -1,4 +1,29 @@
 {
-  "files": [],
-  "references": [{ "path": "./packages/shared" }, { "path": "./apps/api" }]
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@newtonite/shared": ["./packages/shared/src/index.ts"]
+    },
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "packages/shared/src/**/*",
+    "apps/api/src/**/*",
+    "apps/web/src/**/*",
+    "tests/**/*",
+    "prisma/**/*",
+    "vitest.config.ts"
+  ]
 }

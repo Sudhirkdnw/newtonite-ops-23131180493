@@ -3,8 +3,9 @@ import path from 'path';
 import { z } from 'zod';
 
 // Load .env file from workspace root or current directory
-dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
-dotenv.config(); // fallback to current dir
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+dotenv.config(); // fallback
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
