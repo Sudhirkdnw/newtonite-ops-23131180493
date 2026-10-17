@@ -18,16 +18,32 @@ export function createApp(): Application {
   app.use(helmet());
 
   // 3. Configurable CORS policy
-  const allowedOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim());
+  const configuredOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim());
+  const defaultLocalOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ];
+  const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultLocalOrigins]));
+
   app.use(
     cors({
       origin: (origin, callback) => {
         // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
         if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error(`Origin '${origin}' not permitted by CORS policy`));
+          return callback(null, true);
         }
+
+        // Allow any localhost / 127.0.0.1 port in non-production environments
+        if (
+          process.env.NODE_ENV !== 'production' &&
+          /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+        ) {
+          return callback(null, true);
+        }
+
+        return callback(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
