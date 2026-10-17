@@ -6,6 +6,8 @@ import { requestIdMiddleware } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
 import { healthRouter } from './modules/health/health.router';
+import { authRouter } from './modules/auth/auth.router';
+import { workItemsRouter } from './modules/work-items/work-items.router';
 import { NotFoundError } from './shared/errors/AppError';
 
 export function createApp(): Application {
@@ -74,6 +76,8 @@ export function createApp(): Application {
   // 8. API Version Prefix Router (/api/v1)
   const apiRouter = express.Router();
   apiRouter.use('/', healthRouter);
+  apiRouter.use('/auth', authRouter);
+  apiRouter.use('/items', workItemsRouter);
 
   // Mount API router
   app.use(env.API_PREFIX, apiRouter);

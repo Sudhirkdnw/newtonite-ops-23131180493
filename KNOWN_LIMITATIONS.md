@@ -1,29 +1,35 @@
-# Known Limitations & Step 1 Boundary
+# Known Limitations & Step 2 Boundary
 
-This document explicitly lists features that are **not implemented yet** in the Newtonite Operations Under Pressure platform as of **Step 1 (Foundation)**.
-
-While the database schema, relational constraints, and core architectural envelopes have been established to support these requirements, no business logic or tests have been implemented for them yet.
+This document explicitly lists features that are **implemented in Step 2** versus those that remain **pending for subsequent implementation steps** in the Newtonite Operations Under Pressure platform.
 
 ---
 
-## Explicitly Pending Critical Behaviors
+## Status of Critical Behaviors
 
-The following critical operational behaviors are deferred to subsequent implementation steps:
+| #   | Capability                                               | Current Status in Step 2                                                                                                                                                                                                    | Planned Implementation Step        |
+| --- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1   | **Concurrent Claim**                                     | Basic claim API (`POST /api/v1/items/:id/claim`) is implemented with role checking and assigned status conflict checking. Advanced atomic conditional concurrency stress testing under parallel requests is scheduled next. | Step 3 (High-Pressure Concurrency) |
+| 2   | **Stale-Version Update Handling**                        | Version field increments on updates. Explicit HTTP 409 `If-Match` optimistic concurrency middleware and conflict recovery handling is prepared for next step.                                                               | Step 3 (High-Pressure Concurrency) |
+| 3   | **Idempotency Replay**                                   | Schema ready (`IdempotencyKey` table with unique constraint and response cache fields). Middleware interceptor and replay cache pending.                                                                                    | Step 4 (Reliability & Resilience)  |
+| 4   | **Server-Enforced Workflow Transitions & Lead Approval** | **IMPLEMENTED & TESTED** ✅ State machine transition map enforced; `IN_REVIEW -> COMPLETED` approval strictly restricted to Lead and Admin roles with `WORKFLOW_APPROVED` audit events.                                     | Completed in Step 2                |
+| 5   | **Resource-Level Authorization (Team & Role Scoped)**    | **IMPLEMENTED & TESTED** ✅ JWT auth, team membership resolution, permission matrix (Viewer/Member/Lead/Admin), and cross-team 404 isolation enforced.                                                                      | Completed in Step 2                |
+| 6   | **Transactional Outbox Worker**                          | Schema ready (`OutboxJob` table with status, attempts, nextRetryAt). Polling worker process and message publisher pending.                                                                                                  | Step 4 (Reliability & Resilience)  |
+| 7   | **Optimistic UI Reconciliation on HTTP 409/403**         | Backend returns standardized 403 and 409 error envelopes. Interactive frontend reconciliation modal pending.                                                                                                                | Step 6 (Operations Dashboard)      |
 
-| #   | Capability                                               | Current Status in Step 1                                                                                                                                        | Planned Implementation Step            |
-| --- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| 1   | **Concurrent Claim**                                     | Schema ready (`assigneeId` foreign key and indexes exist). No atomic conditional claim endpoint (`UPDATE WHERE assigneeId IS NULL`) is implemented yet.         | Step 3 (Work Item Operations)          |
-| 2   | **Stale-Version Update Handling**                        | Schema ready (`version Int @default(1)`). No optimistic locking middleware or HTTP 409 Conflict handler is implemented for work items yet.                      | Step 3 (Work Item Operations)          |
-| 3   | **Idempotency Replay**                                   | Schema ready (`IdempotencyKey` table with unique constraint and response cache fields). No idempotency middleware or request deduplication logic is active yet. | Step 4 (Reliability & Resilience)      |
-| 4   | **Server-Enforced Workflow Transitions & Lead Approval** | Schema ready (`WorkItemStatus` enum, `ActivityAction.WORKFLOW_APPROVED`). No state transition machine or Lead-only approval guard is enforced yet.              | Step 3 & Step 5 (Authorization)        |
-| 5   | **Resource-Level Authorization (Team & Role Scoped)**    | Schema ready (`Membership` table with `role` and `@@unique([userId, teamId])`). No JWT authentication extraction or team RBAC guards are mounted yet.           | Step 2 (Auth & RBAC)                   |
-| 6   | **Transactional Outbox Worker**                          | Schema ready (`OutboxJob` table with status, attempts, nextRetryAt). No background polling worker or message publisher is running yet.                          | Step 4 (Reliability & Resilience)      |
-| 7   | **Optimistic UI Reconciliation on HTTP 409/403**         | Frontend shell and health status monitor exist. No work-item management UI or conflict reconciliation modal is built yet.                                       | Step 6 (Frontend Operations Dashboard) |
+---
+
+## Implemented in Step 2:
+
+- JWT Authentication (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`).
+- Team-scoped RBAC and permission matrix middleware.
+- Full Work-Item API (`POST /items`, `GET /items`, `GET /items/:id`, `PATCH /items/:id`, `POST /items/:id/claim`, `POST /items/:id/transition`, `GET /items/:id/activity`, `POST /items/:id/comments`).
+- Transactional activity audit logging on all state mutations.
+- Multi-field filtering (status, priority, type, assignee), text search, and cursor-based pagination.
+- 39 integration tests verifying authentication, authorization, workflow approvals, and cross-team security.
 
 ---
 
 ## Other Out-of-Scope Elements
 
-- **Live WebSockets / Push Notifications**: Real-time subscriptions are not part of Step 1 foundation.
-- **External Third-Party Integrations**: Real Stripe APIs, SAML Identity Providers, or email gateways are not integrated; event structures are prepared for outbox simulation.
-- **Production Secret Management**: Development uses documented demo secrets and environment variables. Production deployment requires AWS Secrets Manager, HashiCorp Vault, or equivalent.
+- **Live WebSockets / Push Notifications**: Real-time subscriptions are not part of Step 2.
+- **External Third-Party Integrations**: Real Stripe APIs, SAML Identity Providers, or email gateways are not integrated; structures are prepared for outbox simulation.

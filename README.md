@@ -132,31 +132,126 @@ All demo accounts are provisioned with the development password:
 
 ---
 
-## 7. Current Implementation Status (Step 1 Foundation)
+---
 
-### Completed Foundation:
+## 7. API Reference & Sample Requests
 
-- [x] Monorepo structure with npm workspaces (`packages/shared`, `apps/api`, `apps/web`).
-- [x] Strict TypeScript configuration with project references.
-- [x] Complete PostgreSQL Prisma schema modeling:
-  - `User`, `Team`, `Membership` (with `@@unique([userId, teamId])`).
-  - `WorkItem` (with optimistic locking `version`, type, priority, status, indexes).
-  - `ActivityEvent` (append-only timeline schema).
-  - `Comment` (chronological discussions).
-  - `IdempotencyKey` (unique key, request hash, response caching).
-  - `OutboxJob` (status, attempts, retry schedule).
-- [x] Initial database migration `20261017061147_init_foundation`.
-- [x] Repeatable, deterministic seed script with 4 teams, 10 users across 4 roles, and 10 work items.
-- [x] Centralized Express infrastructure:
-  - Zod environment variable validation (`env.ts`).
-  - Request ID / Correlation ID middleware (`X-Request-Id`).
-  - Structured logger with automatic sensitive field redaction.
-  - Centralized error handler with standardized JSON envelope.
-  - `GET /health` and `GET /ready` (verifies PostgreSQL connection & latency).
-  - Graceful shutdown lifecycle management (`SIGTERM` / `SIGINT`).
-  - Security headers (`helmet`) and configurable CORS.
-- [x] Frontend shell (React + Vite + dark mode design tokens).
-- [x] Test suite passing with 100% test success rate.
-- [x] Linting and formatting quality gates passing with 0 warnings and 0 errors.
+All API responses follow the standard JSON envelope:
+`{ "success": true, "data": ..., "meta": { "timestamp": "...", "requestId": "..." } }`
+or `{ "success": false, "error": { "code": "...", "message": "...", "details": [...] } }`.
 
-_Refer to [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) for pending business logic slated for subsequent steps._
+### Authentication Endpoints
+
+| Method | Endpoint             | Auth Required | Role Required | Description                                               |
+| ------ | -------------------- | ------------- | ------------- | --------------------------------------------------------- |
+| `POST` | `/api/v1/auth/login` | No            | None          | Authenticate with email & password, returns JWT & profile |
+| `GET`  | `/api/v1/auth/me`    | Yes (Bearer)  | Any           | Returns authenticated user profile and team memberships   |
+
+### Work Item Endpoints
+
+| Method  | Endpoint                       | Auth Required | Minimum Role | Description                                                        |
+| ------- | ------------------------------ | ------------- | ------------ | ------------------------------------------------------------------ |
+| `POST`  | `/api/v1/items`                | Yes (Bearer)  | `MEMBER`     | Create a new work item assigned to a specific team                 |
+| `GET`   | `/api/v1/items`                | Yes (Bearer)  | `VIEWER`     | List work items scoped to user's teams with filtering & pagination |
+| `GET`   | `/api/v1/items/:id`            | Yes (Bearer)  | `VIEWER`     | Retrieve item by ID (returns `404` if not in user's teams)         |
+| `PATCH` | `/api/v1/items/:id`            | Yes (Bearer)  | `MEMBER`     | Update title, description, priority, tags, metadata                |
+| `POST`  | `/api/v1/items/:id/claim`      | Yes (Bearer)  | `MEMBER`     | Atomically claim work item (`409 Conflict` if already claimed)     |
+| `POST`  | `/api/v1/items/:id/transition` | Yes (Bearer)  | `MEMBER`\*   | Transition status (`IN_REVIEW -> COMPLETED` requires `LEAD`)       |
+| `GET`   | `/api/v1/items/:id/activity`   | Yes (Bearer)  | `VIEWER`     | Retrieve audit activity timeline for an item                       |
+| `POST`  | `/api/v1/items/:id/comments`   | Yes (Bearer)  | `MEMBER`     | Append a discussion comment to an item                             |
+
+\* _Note: Approving an item from `IN_REVIEW` to `COMPLETED` strictly requires `LEAD` or `ADMIN` role in that team._
+
+---
+
+### Sample cURL Commands
+
+#### 1. Login to receive JWT token:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"bob.lead@newtonite.dev","password":"Demo@Newtonite2026!"}'
+```
+
+#### 2. Get Authenticated Profile (`/auth/me`):
+
+```bash
+curl http://localhost:4000/api/v1/auth/me \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+#### 3. Create a Work Item:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/items \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "teamId": "<TEAM_ID>",
+    "title": "Investigate latency spike on payment gateway",
+    "description": "5xx error rate exceeded 3% over the last 15 minutes.",
+    "type": "INCIDENT",
+    "priority": "P0_CRITICAL",
+    "tags": ["payments", "p0", "latency"]
+  }'
+```
+
+#### 4. List Work Items with Filtering & Cursor Pagination:
+
+```bash
+curl "http://localhost:4000/api/v1/items?status=OPEN&priority=P0_CRITICAL&limit=10" \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+#### 5. Claim a Work Item:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/items/<ITEM_ID>/claim \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+#### 6. Transition Workflow State:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/items/<ITEM_ID>/transition \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetStatus": "IN_PROGRESS",
+    "reason": "Starting investigation"
+  }'
+```
+
+#### 7. Post a Comment:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/items/<ITEM_ID>/comments \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "body": "Root cause identified as database connection pool exhaustion."
+  }'
+```
+
+---
+
+## 8. Current Implementation Status
+
+### Completed (Step 1 Foundation + Step 2 Core Operations Engine):
+
+- [x] **Monorepo Architecture**: Single unified root `package.json` and single `node_modules` running Express backend (`apps/api`), Vite frontend (`apps/web`), and shared contracts (`packages/shared`).
+- [x] **PostgreSQL & Prisma Schema**: Relational models for `User`, `Team`, `Membership`, `WorkItem`, `ActivityEvent`, `Comment`, `IdempotencyKey`, and `OutboxJob`.
+- [x] **Deterministic Seeding**: 4 teams, 10 users with bcrypt-hashed passwords across 4 roles, and 10 work items with activities and comments.
+- [x] **Authentication Engine**: JWT signing & verification, bcrypt comparison, `POST /auth/login` and `GET /auth/me`.
+- [x] **Team-Based Authorization (RBAC)**: Role hierarchy (`VIEWER` < `MEMBER` < `LEAD` < `ADMIN`), team membership enforcement, and cross-team resource isolation returning `404 Not Found` to prevent enumeration attacks.
+- [x] **Work-Item Lifecycle & State Machine**:
+  - Full CRUD operations with Zod validation.
+  - Strict state transition enforcement (`OPEN -> CLAIMED -> IN_PROGRESS -> IN_REVIEW -> COMPLETED`, plus `BLOCKED` and `CANCELED`).
+  - Lead-only approval enforcement for `IN_REVIEW -> COMPLETED`.
+  - Atomic claiming mechanism with `409 Conflict` prevention on already claimed items.
+- [x] **Transactional Audit Logging**: Every state mutation atomically writes an immutable `ActivityEvent` to the item's timeline.
+- [x] **Activity Timeline & Comments**: Paginated timeline retrieval and discussion threads.
+- [x] **Quality Gates & Test Coverage**: Vitest integration tests covering auth, RBAC, state transitions, claim conflicts, and pagination with 100% test pass rate.
+
+_Refer to [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md) and [ENGINEERING_DECISIONS.md](./ENGINEERING_DECISIONS.md) for architectural records and future step roadmaps._

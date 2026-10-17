@@ -143,3 +143,81 @@ Adopt **Membership-Scoped Roles** with a compound unique constraint `@@unique([u
 
 - _Pros_: Granular, realistic multi-tenant team security; prevents privilege leaks across departments.
 - _Cons_: Authorization checks must resolve team membership for each resource.
+
+---
+
+## ADR 007: Team-Scoped Role-Based Access Control & Permission Matrix
+
+### Context
+
+Work items, audit trails, and discussions in Newtonite belong strictly to functional teams. Operators hold team-specific roles (`VIEWER`, `MEMBER`, `LEAD`, `ADMIN`) that govern their capabilities within each assigned team.
+
+### Decision
+
+Enforce permissions exclusively on the server side across all routes. The permissions matrix is enforced as follows:
+
+| Action                                                                                    |  Viewer  |  Member  | Lead | Admin / System Admin |
+| ----------------------------------------------------------------------------------------- | :------: | :------: | :--: | :------------------: |
+| `GET /items` (List team items)                                                            |    ✅    |    ✅    |  ✅  |          ✅          |
+| `GET /items/:id` (View item)                                                              |    ✅    |    ✅    |  ✅  |          ✅          |
+| `GET /items/:id/activity` (Audit timeline)                                                |    ✅    |    ✅    |  ✅  |          ✅          |
+| `POST /items` (Create work item)                                                          | ❌ (403) |    ✅    |  ✅  |          ✅          |
+| `PATCH /items/:id` (Update fields)                                                        | ❌ (403) |    ✅    |  ✅  |          ✅          |
+| `POST /items/:id/claim` (Claim unassigned)                                                | ❌ (403) |    ✅    |  ✅  |          ✅          |
+| `POST /items/:id/comments` (Add discussion)                                               | ❌ (403) |    ✅    |  ✅  |          ✅          |
+| `POST /items/:id/transition` (Routine: Backlog, Triaged, In Progress, Blocked, In Review) | ❌ (403) |    ✅    |  ✅  |          ✅          |
+| `POST /items/:id/transition` (Approval: In Review -> Completed)                           | ❌ (403) | ❌ (403) |  ✅  |          ✅          |
+| `POST /items/:id/transition` (Re-open: Completed / Cancelled -> In Progress / Backlog)    | ❌ (403) | ❌ (403) |  ✅  |          ✅          |
+
+### Trade-offs
+
+- _Pros_: Complete prevention of privilege escalation; deterministic server-side enforcement independent of UI state.
+- _Cons_: Requires every request to resolve caller's membership role within the target item's team.
+
+---
+
+## ADR 008: Workflow State Transition Model & Lead Approval Gate
+
+### Context
+
+Operational integrity requires that work items follow strict operational stages and that mission-critical items cannot be arbitrarily marked `COMPLETED` without Lead or Admin sign-off.
+
+### Decision
+
+Implement a deterministic state machine on the server:
+
+- `BACKLOG` -> `TRIAGED`, `IN_PROGRESS`, `CANCELLED`
+- `TRIAGED` -> `IN_PROGRESS`, `CANCELLED`
+- `IN_PROGRESS` -> `BLOCKED`, `IN_REVIEW`, `CANCELLED`
+- `BLOCKED` -> `IN_PROGRESS`, `CANCELLED`
+- `IN_REVIEW` -> `COMPLETED` (**Lead or Admin approval strictly required**), `IN_PROGRESS`
+- `COMPLETED` -> `IN_PROGRESS` (Re-open, Lead or Admin required)
+- `CANCELLED` -> `BACKLOG` (Re-open, Lead or Admin required)
+
+Invalid transitions are rejected with `HTTP 400 Bad Request`. Transitioning `IN_REVIEW -> COMPLETED` by a Member or Viewer returns `HTTP 403 Forbidden`. Successful approval records a dedicated `WORKFLOW_APPROVED` audit event.
+
+### Trade-offs
+
+- _Pros_: Prevents unverified bypass of quality or compliance controls; verifiable audit log of approvals.
+- _Cons_: Leads become a required participant in resolving items in review.
+
+---
+
+## ADR 009: Cross-Team Resource Isolation: 404 vs 403 Security Policy
+
+### Context
+
+A user belonging to Team A should never be able to discover or manipulate resources belonging to Team B. If an API returns `HTTP 403 Forbidden` for an item ID in another team, an attacker can enumerate IDs and deduce resource existence.
+
+### Decision
+
+Apply a strict multi-tenant boundary policy:
+
+1. **Resource Identification (`/items/:id`)**: If an item does not exist **OR** if the caller is not a member of the item's team, the server returns **`HTTP 404 Not Found`**.
+2. **Team-Scoped Action (`/items` with `teamId`)**: If the caller explicitly queries or creates an item specifying a `teamId` to which they do not belong, the server returns **`HTTP 403 Forbidden`** (explicit boundary rejection).
+3. **Role Violations (within caller's team)**: If the caller is a member of the team but lacks sufficient authority (e.g. Viewer mutating an item, or Member approving an `IN_REVIEW` item), the server returns **`HTTP 403 Forbidden`**.
+
+### Trade-offs
+
+- _Pros_: Total elimination of ID enumeration / oracle attacks across functional teams; secure-by-default behavior.
+- _Cons_: Developers debugging client requests on mismatched IDs must verify their active team memberships.
