@@ -8,6 +8,8 @@ import {
   type WorkflowSettingsDTO,
   type SecuritySettingsDTO,
   type NotificationSettingsDTO,
+  type AiSettingsDTO,
+  DEFAULT_NEWTONITE_LOGO,
 } from '@newtonite/shared';
 import { logger } from '../../shared/logger/logger';
 import type { Prisma } from '@prisma/client';
@@ -25,7 +27,7 @@ export const DEFAULT_SETTINGS = {
 
   branding: {
     appName: 'Newtonite Ops',
-    logoUrl: null,
+    logoUrl: DEFAULT_NEWTONITE_LOGO,
     faviconUrl: null,
     browserTitle: 'Newtonite Ops — Operations Under Pressure',
     primaryColor: '#2563eb',
@@ -81,6 +83,16 @@ export const DEFAULT_SETTINGS = {
     notifyOnAssignment: true,
     notifyOnApproval: true,
   } as NotificationSettingsDTO,
+
+  ai: {
+    provider: 'groq',
+    model: 'llama-3.3-70b-versatile',
+    apiKey: '',
+    enabled: true,
+    temperature: 0.2,
+    maxTokens: 1024,
+    systemPrompt: '',
+  } as AiSettingsDTO,
 };
 
 export class SettingsService {
@@ -135,6 +147,17 @@ export class SettingsService {
   }
 
   /**
+   * Safe getter for AI configuration that masks the stored apiKey before returning to client.
+   */
+  async getAiSettingsSafe(): Promise<AiSettingsDTO> {
+    const raw = await this.getSettings<AiSettingsDTO>('ai');
+    return {
+      ...raw,
+      apiKey: raw.apiKey ? '••••••••' : '',
+    };
+  }
+
+  /**
    * Updates settings transactionally, creates an append-only audit event with redacted secrets,
    * and immediately refreshes cache.
    */
@@ -156,11 +179,38 @@ export class SettingsService {
       }
     }
 
+    // If updating AI, handle apiKey preservation:
+    // If incoming apiKey is empty string, undefined, or masked '••••••••', keep existing stored apiKey.
+    if (category === 'ai') {
+      const currentAi = current as unknown as AiSettingsDTO;
+      const updateAi = updates as unknown as Partial<AiSettingsDTO>;
+      if (!updateAi.apiKey || updateAi.apiKey === '••••••••') {
+        (merged as unknown as AiSettingsDTO).apiKey = currentAi.apiKey;
+      }
+    }
+
+    // If updating branding, handle logo preservation:
+    // If incoming logoUrl is empty string, null, or undefined, preserve existing stored logo.
+    if (category === 'branding') {
+      const currentBranding = current as unknown as BrandingSettingsDTO;
+      const updateBranding = updates as unknown as Partial<BrandingSettingsDTO>;
+      if (!updateBranding.logoUrl) {
+        (merged as unknown as BrandingSettingsDTO).logoUrl =
+          currentBranding.logoUrl || DEFAULT_NEWTONITE_LOGO;
+      }
+    }
+
     // Prepare safe before/after diff for audit log (strip or mask secrets)
     const redactSecrets = (obj: Record<string, unknown>): Record<string, unknown> => {
       const clone = { ...obj };
       if ('smtpPassword' in clone && clone.smtpPassword) {
         clone.smtpPassword = '••••••••';
+      }
+      if ('apiKey' in clone && clone.apiKey) {
+        clone.apiKey = '••••••••';
+      }
+      if ('logoUrl' in clone && typeof clone.logoUrl === 'string' && clone.logoUrl.length > 80) {
+        clone.logoUrl = `[BASE64_IMAGE_${clone.logoUrl.length}_CHARS]`;
       }
       return clone;
     };

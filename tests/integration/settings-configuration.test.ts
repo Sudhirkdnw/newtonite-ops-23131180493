@@ -4,6 +4,7 @@ import { app } from '../../apps/api/src/app';
 import { prisma } from '../../apps/api/src/shared/database/prisma';
 import { settingsService } from '../../apps/api/src/modules/settings/settings.service';
 import { slaService } from '../../apps/api/src/modules/sla/sla.service';
+import { DEFAULT_NEWTONITE_LOGO } from '@newtonite/shared';
 
 describe('Step 7: Centralized Settings & Configuration Center Integration Tests', () => {
   let adminToken: string;
@@ -43,6 +44,13 @@ describe('Step 7: Centralized Settings & Configuration Center Integration Tests'
       warningBufferPercent: 25,
       scanIntervalMinutes: 5,
       escalationProcessingEnabled: true,
+    });
+    await settingsService.updateSettings('branding', {
+      appName: 'Newtonite Ops',
+      logoUrl: DEFAULT_NEWTONITE_LOGO,
+      browserTitle: 'Newtonite Ops — Operations Under Pressure',
+      primaryColor: '#2563eb',
+      accentColor: '#1d4ed8',
     });
     settingsService.clearCache();
   });

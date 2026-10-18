@@ -45,12 +45,13 @@ export class SlaService {
     }
 
     const now = options.now ?? new Date();
-    const batchSize = Math.min(options.batchSize ?? 50, 200);
+    const batchSize = Math.min(options.batchSize ?? 200, 500);
 
-    // Bounded indexed query for active items
+    // Bounded indexed query for active items that have not reached terminal escalation
     const candidates = await prisma.workItem.findMany({
       where: {
         status: { notIn: [WorkItemStatus.COMPLETED, WorkItemStatus.CANCELLED] },
+        lastEscalationStatus: { not: 'BREACHED' },
         ...(options.teamId ? { teamId: options.teamId } : {}),
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],

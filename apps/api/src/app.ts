@@ -9,6 +9,7 @@ import { healthRouter } from './modules/health/health.router';
 import { authRouter } from './modules/auth/auth.router';
 import { workItemsRouter } from './modules/work-items/work-items.router';
 import { settingsRouter } from './modules/settings/settings.router';
+import { aiRouter } from './modules/ai/ai.router';
 import { NotFoundError } from './shared/errors/AppError';
 
 export function createApp(): Application {
@@ -80,6 +81,7 @@ export function createApp(): Application {
   apiRouter.use('/auth', authRouter);
   apiRouter.use('/items', workItemsRouter);
   apiRouter.use('/settings', settingsRouter);
+  apiRouter.use('/ai', aiRouter);
 
   // Mount API router
   app.use(env.API_PREFIX, apiRouter);

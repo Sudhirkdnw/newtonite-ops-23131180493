@@ -7,7 +7,7 @@ export class EmailService {
   /**
    * Builds a nodemailer transport based on provided or stored SMTP configuration.
    */
-  private createTransport(config: EmailSettingsDTO) {
+  private createTransport(config: EmailSettingsDTO, forceSecure?: boolean) {
     if (!config.smtpHost) {
       throw new Error('SMTP host is not configured');
     }
@@ -22,18 +22,32 @@ export class EmailService {
       });
     }
 
+    // RFC Standard: Port 465 is implicit TLS (secure: true); Port 587/25 use explicit STARTTLS (secure: false).
+    // If port 587 is selected, secure must be false to avoid OpenSSL wrong version number errors.
+    const isSecure =
+      forceSecure !== undefined
+        ? forceSecure
+        : config.smtpPort === 465
+          ? true
+          : config.smtpPort === 587
+            ? false
+            : Boolean(config.smtpSecure);
+
     return nodemailer.createTransport({
       host: config.smtpHost,
       port: config.smtpPort,
-      secure: config.smtpSecure,
+      secure: isSecure,
       auth: config.smtpUser
         ? {
             user: config.smtpUser,
             pass: config.smtpPassword || '',
           }
         : undefined,
-      connectionTimeout: 5000,
-      greetingTimeout: 5000,
+      tls: {
+        rejectUnauthorized: false,
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
     });
   }
 
@@ -64,8 +78,49 @@ export class EmailService {
 
       return { success: true, message: 'SMTP connection established successfully' };
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logger.warn(`[EmailService] SMTP verification failed: ${errMsg}`, {
+      const rawErrMsg = err instanceof Error ? err.message : String(err);
+
+      // If error was wrong version number (SSL on STARTTLS port 587), attempt fallback with secure: false
+      if (
+        (rawErrMsg.includes('wrong version number') || rawErrMsg.includes('SSL routines')) &&
+        config.smtpPort === 587
+      ) {
+        try {
+          const fallbackTransporter = this.createTransport(config, false);
+          await fallbackTransporter.verify();
+
+          await settingsService.updateSettings<EmailSettingsDTO>(
+            'email',
+            {
+              smtpSecure: false,
+              lastTestResult: 'SUCCESS',
+              lastTestedAt: new Date().toISOString(),
+              lastTestError: null,
+            },
+            actorId
+          );
+
+          return {
+            success: true,
+            message:
+              'SMTP connection established successfully via STARTTLS (auto-adjusted TLS mode for port 587)',
+          };
+        } catch {
+          // Fall through to error reporting below
+        }
+      }
+
+      let userFacingError = rawErrMsg;
+      if (
+        rawErrMsg.includes('535') ||
+        rawErrMsg.includes('BadCredentials') ||
+        rawErrMsg.includes('Username and Password not accepted')
+      ) {
+        userFacingError +=
+          ' — Note: For Gmail (smtp.gmail.com), you must use a 16-character Google App Password (not your Gmail account password). Create one at https://myaccount.google.com/apppasswords';
+      }
+
+      logger.warn(`[EmailService] SMTP verification failed: ${userFacingError}`, {
         host: config.smtpHost,
         port: config.smtpPort,
       });
@@ -76,12 +131,12 @@ export class EmailService {
         {
           lastTestResult: 'FAILED',
           lastTestedAt: new Date().toISOString(),
-          lastTestError: errMsg,
+          lastTestError: userFacingError,
         },
         actorId
       );
 
-      return { success: false, message: `SMTP connection failed: ${errMsg}` };
+      return { success: false, message: `SMTP connection failed: ${userFacingError}` };
     }
   }
 

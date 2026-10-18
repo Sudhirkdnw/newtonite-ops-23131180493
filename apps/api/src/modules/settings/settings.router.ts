@@ -9,7 +9,10 @@ import {
   WorkflowSettingsSchema,
   SecuritySettingsSchema,
   NotificationSettingsSchema,
+  AiSettingsSchema,
   UpdateTeamMemberRoleSchema,
+  AddTeamMemberSchema,
+  CreateUserAdminSchema,
   ToggleUserActiveSchema,
   TeamRole,
 } from '@newtonite/shared';
@@ -102,10 +105,40 @@ settingsRouter.patch('/teams/:teamId/members/:membershipId/role', async (req, re
   }
 });
 
+settingsRouter.post('/teams/:teamId/members', async (req, res, next) => {
+  try {
+    const parsed = AddTeamMemberSchema.parse(req.body);
+    await teamsAdminService.addMemberToTeam(req.params.teamId, parsed, req.user!.id);
+    return sendSuccess(res, { message: 'Member added to team successfully' }, 201);
+  } catch (err) {
+    next(err);
+  }
+});
+
 settingsRouter.delete('/teams/:teamId/members/:membershipId', async (req, res, next) => {
   try {
     await teamsAdminService.removeMember(req.params.teamId, req.params.membershipId, req.user!.id);
     return sendSuccess(res, { message: 'Member removed successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+settingsRouter.get('/users/all', async (req, res, next) => {
+  try {
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const users = await teamsAdminService.listAllUsers(search);
+    return sendSuccess(res, users);
+  } catch (err) {
+    next(err);
+  }
+});
+
+settingsRouter.post('/users', async (req, res, next) => {
+  try {
+    const parsed = CreateUserAdminSchema.parse(req.body);
+    const user = await teamsAdminService.createUser(parsed, req.user!.id);
+    return sendSuccess(res, user, 201);
   } catch (err) {
     next(err);
   }
@@ -223,6 +256,11 @@ settingsRouter.get('/:category', async (req, res, next) => {
       return sendSuccess(res, data);
     }
 
+    if (cat === 'ai') {
+      const data = await settingsService.getAiSettingsSafe();
+      return sendSuccess(res, data);
+    }
+
     const data = await settingsService.getSettings(cat);
     return sendSuccess(res, data);
   } catch (err) {
@@ -257,6 +295,9 @@ settingsRouter.put('/:category', async (req, res, next) => {
       case SettingsCategory.NOTIFICATION:
         validatedData = NotificationSettingsSchema.parse(req.body);
         break;
+      case SettingsCategory.AI:
+        validatedData = AiSettingsSchema.parse(req.body);
+        break;
       default:
         throw new BadRequestError(`Unknown settings category '${req.params.category}'`);
     }
@@ -265,6 +306,11 @@ settingsRouter.put('/:category', async (req, res, next) => {
 
     if (cat === 'email') {
       const safe = await settingsService.getEmailSettingsSafe();
+      return sendSuccess(res, safe);
+    }
+
+    if (cat === 'ai') {
+      const safe = await settingsService.getAiSettingsSafe();
       return sendSuccess(res, safe);
     }
 

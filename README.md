@@ -324,6 +324,33 @@ _(If the item has already been modified to version 3+, returns `HTTP 409 Conflic
   - Team & access control administration with server-side last-admin safeguard and self-deactivation protection.
   - Live Background Jobs queue statistics (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `DEAD_LETTER`) and idempotent retry endpoint.
   - Append-only configuration audit history with redacted secrets in diff logs.
+- [x] **Critical Behaviour 10 — Secure AI Operations Assistant (Step 8)**:
+  - Provider abstraction using official `@google/genai` SDK with seamless fallback to deterministic `MockAiProvider` for CI/CD test automation.
+  - Server-side secret storage via `SystemSetting` (`ai` category) or `GEMINI_API_KEY` with password masking and blank preservation.
+  - Clear `NOT_CONFIGURED` (503) state when no key is set; core operational workflows remain 100% functional without AI dependencies.
+  - Prompt-injection defense: user-supplied content (titles, descriptions, comments) is stripped of delimiter tags, scrubbed of credentials, and enclosed in `<untrusted_content>` tags.
+  - System prompts instruct the LLM to treat operational context strictly as passive data, never as commands.
+  - Strict team RBAC: context retrieval enforces the caller's active team memberships; cross-team queries return `404 Not Found`.
+  - Bounded operational analytics: urgent overdue triage, SLA approaching warnings, and workload capacity summaries using verified database metrics (zero arbitrary SQL).
+  - Incident summarization clearly separating confirmed database facts from unconfirmed AI hypotheses and actionable next steps.
+  - Editable escalation email draft generator requiring explicit human confirmation before queuing to the Outbox.
+  - Sliding-window rate limiting (30 requests/minute/user) and 10s request execution timeout with `AbortController`.
+  - Responsive frontend panel with suggested prompt pills, referenced work-item cards, facts vs hypotheses breakdown, and Settings Center integration.
+- [x] **Step 9 Final Security, Performance & Reliability Audit**:
+  - **117 / 117 automated tests passing** across 15 test suites with 100% test pass rate.
+  - Security hardening: sliding-window authentication rate limiter (`50 req/min/IP`) on `POST /api/v1/auth/login`.
+  - Reliability & performance: bounded memory limits (`take: 100`) on activity history and comment feeds.
+  - Verified multi-team RBAC isolation returning `HTTP 404 Not Found` for cross-team probes.
+  - Strict secret scrubbing across structured logs, settings API envelopes, and configuration diffs.
+  - Production builds: API & Web bundles compile cleanly (`npm run build`).
+  - Comprehensive documentation in `docs/FINAL_RELEASE_AUDIT.md`.
+- [x] **Step 8 Quality Gates & Verification**:
+  - **117 / 117 automated tests passing** across 15 test suites (11/11 AI assistant, 12/12 settings configuration, 9/9 SLA escalation, 15/15 E2E flows, 6/6 SLA calculator, 12/12 frontend ops, 3/3 optimistic reconciliation, 49/49 core backend).
+  - TypeScript strict mode: **0 type errors** (`tsc --noEmit`).
+  - ESLint: **0 errors, 0 warnings** (`eslint .`).
+  - Prettier: **100% formatted** (`prettier --check "**/*.{ts,tsx,json,md}"`).
+  - Production builds: API & Web bundles compile cleanly (`npm run build`).
+  - Comprehensive documentation in `docs/AI_OPERATIONS_ASSISTANT_REPORT.md`.
 - [x] **Step 7 Quality Gates & Verification**:
   - **106 / 106 automated tests passing** across 14 test suites (12/12 settings configuration, 9/9 SLA escalation, 15/15 E2E flows, 6/6 SLA calculator, 12/12 frontend ops, 3/3 optimistic reconciliation, 49/49 core backend).
   - TypeScript strict mode: **0 type errors** (`tsc --noEmit`).

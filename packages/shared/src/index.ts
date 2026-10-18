@@ -431,6 +431,7 @@ export const SettingsCategory = {
   WORKFLOW: 'workflow',
   SECURITY: 'security',
   NOTIFICATION: 'notification',
+  AI: 'ai',
 } as const;
 export type SettingsCategory = (typeof SettingsCategory)[keyof typeof SettingsCategory];
 
@@ -447,9 +448,12 @@ export const GeneralSettingsSchema = z.object({
 export type GeneralSettingsDTO = z.infer<typeof GeneralSettingsSchema>;
 
 // B. Branding
+export const DEFAULT_NEWTONITE_LOGO =
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJuZXd0R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+PHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzNiODJmNiIvPjxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzFkNGVkOCIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiByeD0iMjQiIGZpbGw9InVybCgjbmV3dEdyYWQpIi8+PHBhdGggZD0iTTI4IDcyIFYyOCBMNTAgNTYgTDcyIDI4IFY3MiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjkiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTYiIHI9IjYiIGZpbGw9IiM2MGE1ZmEiIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSIyIi8+PGNpcmNsZSBjeD0iMjgiIGN5PSIyOCIgcj0iNC41IiBmaWxsPSIjOTNjNWZkIi8+PGNpcmNsZSBjeD0iNzIiIGN5PSIyOCIgcj0iNC41IiBmaWxsPSIjOTNjNWZkIi8+PGNpcmNsZSBjeD0iMjgiIGN5PSI3MiIgcj0iNC41IiBmaWxsPSIjOTNjNWZkIi8+PGNpcmNsZSBjeD0iNzIiIGN5PSI3MiIgcj0iNC41IiBmaWxsPSIjOTNjNWZkIi8+PC9zdmc+';
+
 export const BrandingSettingsSchema = z.object({
   appName: z.string().min(1).max(100),
-  logoUrl: z.string().nullable().default(null),
+  logoUrl: z.string().nullable().default(DEFAULT_NEWTONITE_LOGO),
   faviconUrl: z.string().nullable().default(null),
   browserTitle: z.string().min(1).max(150),
   primaryColor: z
@@ -528,6 +532,99 @@ export const NotificationSettingsSchema = z.object({
 });
 export type NotificationSettingsDTO = z.infer<typeof NotificationSettingsSchema>;
 
+// G. AI Configuration
+export const AiSettingsSchema = z.object({
+  provider: z.enum(['groq', 'gemini', 'openai', 'anthropic', 'mock']).default('groq'),
+  model: z.string().min(1).default('llama-3.3-70b-versatile'),
+  apiKey: z.string().optional(),
+  enabled: z.boolean().default(true),
+  temperature: z.number().min(0).max(1).default(0.2),
+  maxTokens: z.number().int().min(128).max(4096).default(1024),
+  systemPrompt: z.string().optional(),
+});
+export type AiSettingsDTO = z.infer<typeof AiSettingsSchema>;
+
+// Assistant Schemas & DTOs
+export const AiAssistantIntent = {
+  SUMMARIZE_INCIDENT: 'SUMMARIZE_INCIDENT',
+  ANALYZE_OPERATIONS: 'ANALYZE_OPERATIONS',
+  OVERDUE_URGENT: 'OVERDUE_URGENT',
+  APPROACHING_SLA: 'APPROACHING_SLA',
+  DRAFT_ESCALATION_EMAIL: 'DRAFT_ESCALATION_EMAIL',
+  GENERAL_QA: 'GENERAL_QA',
+} as const;
+export type AiAssistantIntent = (typeof AiAssistantIntent)[keyof typeof AiAssistantIntent];
+
+export const AiAssistantQuerySchema = z.object({
+  prompt: z
+    .string()
+    .min(1, 'Prompt is required')
+    .max(4000, 'Prompt exceeds maximum character length (4000)'),
+  intent: z
+    .enum([
+      'SUMMARIZE_INCIDENT',
+      'ANALYZE_OPERATIONS',
+      'OVERDUE_URGENT',
+      'APPROACHING_SLA',
+      'DRAFT_ESCALATION_EMAIL',
+      'GENERAL_QA',
+    ])
+    .optional(),
+  teamId: z.string().uuid().optional(),
+  workItemId: z.string().uuid().optional(),
+});
+export type AiAssistantQueryInput = z.infer<typeof AiAssistantQuerySchema>;
+
+export interface ReferencedWorkItemDTO {
+  id: string;
+  title: string;
+  priority: Priority;
+  status: WorkItemStatus;
+  teamId: string;
+  teamName?: string;
+  slaStatus?: SlaStatus;
+  timeRemainingFormatted?: string;
+}
+
+export interface EmailDraftDTO {
+  to?: string;
+  subject: string;
+  body: string;
+  isEscalation: boolean;
+  workItemId?: string;
+}
+
+export interface AiAssistantResponseDTO {
+  text: string;
+  intent: AiAssistantIntent;
+  modelUsed: string;
+  providerStatus: 'CONFIGURED' | 'NOT_CONFIGURED' | 'MOCK';
+  referencedWorkItems: ReferencedWorkItemDTO[];
+  hypotheses?: string[];
+  actionableSteps?: string[];
+  emailDraft?: EmailDraftDTO;
+  isAiGenerated: true;
+  generatedAt: string;
+}
+
+export const AiDraftEmailSchema = z.object({
+  workItemId: z.string().uuid(),
+  type: z
+    .enum(['ESCALATION_UPDATE', 'STATUS_DIGEST', 'STAKEHOLDER_NOTICE'])
+    .default('ESCALATION_UPDATE'),
+  recipientEmail: z.string().email().optional(),
+  additionalInstructions: z.string().max(1000).optional(),
+});
+export type AiDraftEmailInput = z.infer<typeof AiDraftEmailSchema>;
+
+export interface AiStatusDTO {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  status: 'CONFIGURED' | 'NOT_CONFIGURED' | 'MOCK';
+  hasApiKey: boolean;
+}
+
 // Audit & Outbox DTOs
 export interface SettingAuditEventDTO {
   id: string;
@@ -584,6 +681,32 @@ export const AddTeamMemberSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(['VIEWER', 'MEMBER', 'LEAD', 'ADMIN']),
 });
+export type AddTeamMemberInput = z.infer<typeof AddTeamMemberSchema>;
+
+export const CreateUserAdminSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters').max(100),
+  systemRole: z.enum(['USER', 'SYSTEM_ADMIN']).default('USER'),
+  teamId: z.string().uuid().optional(),
+  teamRole: z.enum(['VIEWER', 'MEMBER', 'LEAD', 'ADMIN']).optional(),
+});
+export type CreateUserAdminInput = z.infer<typeof CreateUserAdminSchema>;
+
+export interface UserSummaryDTO {
+  id: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  systemRole: SystemRole;
+  createdAt: string;
+  memberships: Array<{
+    id: string;
+    teamId: string;
+    teamName: string;
+    role: TeamRole;
+  }>;
+}
 
 export const ToggleUserActiveSchema = z.object({
   isActive: z.boolean(),

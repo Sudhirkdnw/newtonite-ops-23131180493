@@ -727,6 +727,7 @@ export class WorkItemsService {
     const events = await prisma.activityEvent.findMany({
       where: { workItemId: itemId },
       orderBy: { createdAt: 'asc' },
+      take: 100,
       include: {
         actor: {
           select: {
@@ -817,6 +818,7 @@ export class WorkItemsService {
     const comments = await prisma.comment.findMany({
       where: { workItemId: itemId },
       orderBy: { createdAt: 'asc' },
+      take: 100,
       include: {
         author: {
           select: { id: true, name: true, email: true },

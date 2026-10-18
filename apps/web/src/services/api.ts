@@ -14,6 +14,14 @@ import type {
   SettingAuditEventDTO,
   OutboxQueueStatsDTO,
   TeamMemberAdminDTO,
+  UserSummaryDTO,
+  CreateUserAdminInput,
+  AddTeamMemberInput,
+  AiStatusDTO,
+  AiAssistantQueryInput,
+  AiAssistantResponseDTO,
+  AiDraftEmailInput,
+  EmailDraftDTO,
 } from '@newtonite/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
@@ -343,6 +351,43 @@ export async function fetchTeamMembersAdmin(
   return request<TeamMemberAdminDTO[]>(`/settings/teams/members${query}`, { method: 'GET' }, token);
 }
 
+export async function fetchAllUsersAdmin(
+  token: string,
+  search?: string
+): Promise<UserSummaryDTO[]> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return request<UserSummaryDTO[]>(`/settings/users/all${query}`, { method: 'GET' }, token);
+}
+
+export async function createUserAdmin(
+  token: string,
+  data: CreateUserAdminInput
+): Promise<UserSummaryDTO> {
+  return request<UserSummaryDTO>(
+    '/settings/users',
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    },
+    token
+  );
+}
+
+export async function addTeamMemberAdmin(
+  token: string,
+  teamId: string,
+  data: AddTeamMemberInput
+): Promise<void> {
+  await request<void>(
+    `/settings/teams/${teamId}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    },
+    token
+  );
+}
+
 export async function updateMemberRoleAdmin(
   token: string,
   teamId: string,
@@ -407,4 +452,36 @@ export async function fetchAuditHistory(
   params.set('page', String(page));
   params.set('limit', String(limit));
   return request(`/settings/audit/history?${params.toString()}`, { method: 'GET' }, token);
+}
+
+export async function fetchAiStatus(token: string): Promise<AiStatusDTO> {
+  return request<AiStatusDTO>('/ai/status', { method: 'GET' }, token);
+}
+
+export async function queryAiAssistant(
+  token: string,
+  input: AiAssistantQueryInput
+): Promise<AiAssistantResponseDTO> {
+  return request<AiAssistantResponseDTO>(
+    '/ai/assistant',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token
+  );
+}
+
+export async function draftAiEmail(
+  token: string,
+  input: AiDraftEmailInput
+): Promise<EmailDraftDTO> {
+  return request<EmailDraftDTO>(
+    '/ai/draft-email',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+    token
+  );
 }

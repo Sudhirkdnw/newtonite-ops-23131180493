@@ -11,6 +11,8 @@ import {
   type SettingAuditEventDTO,
   type OutboxQueueStatsDTO,
   type TeamMemberAdminDTO,
+  type UserSummaryDTO,
+  type AiSettingsDTO,
 } from '@newtonite/shared';
 import {
   fetchSetting,
@@ -20,6 +22,9 @@ import {
   sendTestEmail,
   fetchTeamsAdmin,
   fetchTeamMembersAdmin,
+  fetchAllUsersAdmin,
+  createUserAdmin,
+  addTeamMemberAdmin,
   updateMemberRoleAdmin,
   removeMemberAdmin,
   toggleUserActiveAdmin,
@@ -36,6 +41,7 @@ type SettingsTab =
   | 'branding'
   | 'email'
   | 'sla'
+  | 'ai'
   | 'teams'
   | 'security'
   | 'workflow'
@@ -46,11 +52,23 @@ type SettingsTab =
 interface SettingsPageProps {
   onNotify: (type: 'success' | 'error' | 'info', message: string, title?: string) => void;
   onBrandingUpdated?: (branding: BrandingSettingsDTO) => void;
+  initialTab?: SettingsTab;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBrandingUpdated }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({
+  onNotify,
+  onBrandingUpdated,
+  initialTab,
+}) => {
   const { token, currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab || 'general');
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
@@ -60,6 +78,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
   const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
   const [email, setEmail] = useState<EmailSettingsDTO | null>(null);
   const [sla, setSla] = useState<SlaSettingsDTO | null>(null);
+  const [ai, setAi] = useState<AiSettingsDTO | null>(null);
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [workflow, setWorkflow] = useState<WorkflowSettingsDTO | null>(null);
   const [security, setSecurity] = useState<SecuritySettingsDTO | null>(null);
   const [notifications, setNotifications] = useState<NotificationSettingsDTO | null>(null);
@@ -70,6 +90,32 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
   >([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   const [teamMembers, setTeamMembers] = useState<TeamMemberAdminDTO[]>([]);
+  const [allUsers, setAllUsers] = useState<UserSummaryDTO[]>([]);
+  const [teamsViewMode, setTeamsViewMode] = useState<'memberships' | 'all_users'>('memberships');
+  const [userSearchQuery, setUserSearchQuery] = useState<string>('');
+
+  // Add Member / Create User Modal State
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [userModalTab, setUserModalTab] = useState<'create_new' | 'add_existing'>('create_new');
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
+
+  // Form fields for "Create New User"
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('Newtonite@2026!');
+  const [newUserSystemRole, setNewUserSystemRole] = useState<'USER' | 'SYSTEM_ADMIN'>('USER');
+  const [newUserAssignTeam, setNewUserAssignTeam] = useState(true);
+  const [newUserTeamId, setNewUserTeamId] = useState('');
+  const [newUserTeamRole, setNewUserTeamRole] = useState<'VIEWER' | 'MEMBER' | 'LEAD' | 'ADMIN'>(
+    'MEMBER'
+  );
+
+  // Form fields for "Add Existing User to Team"
+  const [existingUserId, setExistingUserId] = useState('');
+  const [existingTeamId, setExistingTeamId] = useState('');
+  const [existingTeamRole, setExistingTeamRole] = useState<'VIEWER' | 'MEMBER' | 'LEAD' | 'ADMIN'>(
+    'MEMBER'
+  );
 
   // Jobs & Health State
   const [queueStats, setQueueStats] = useState<OutboxQueueStatsDTO | null>(null);
@@ -106,13 +152,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
       } else if (activeTab === 'sla') {
         const data = await fetchSetting<SlaSettingsDTO>(token, 'sla');
         setSla(data);
+      } else if (activeTab === 'ai') {
+        const data = await fetchSetting<AiSettingsDTO>(token, 'ai');
+        setAi(data);
       } else if (activeTab === 'teams') {
-        const [teamsList, membersList] = await Promise.all([
+        const [teamsList, membersList, usersList] = await Promise.all([
           fetchTeamsAdmin(token),
           fetchTeamMembersAdmin(token, selectedTeamId || undefined),
+          fetchAllUsersAdmin(token),
         ]);
         setTeams(teamsList);
         setTeamMembers(membersList);
+        setAllUsers(usersList);
       } else if (activeTab === 'security') {
         const data = await fetchSetting<SecuritySettingsDTO>(token, 'security');
         setSecurity(data);
@@ -249,6 +300,80 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
     }
   };
 
+  // User Management Actions
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
+      onNotify('error', 'Please provide a valid Name, Email, and Password.', 'Missing Information');
+      return;
+    }
+    if (newUserPassword.length < 6) {
+      onNotify('error', 'Password must be at least 6 characters.', 'Password Policy');
+      return;
+    }
+
+    setIsSubmittingUser(true);
+    try {
+      await createUserAdmin(token, {
+        name: newUserName.trim(),
+        email: newUserEmail.trim(),
+        password: newUserPassword,
+        systemRole: newUserSystemRole,
+        teamId: newUserAssignTeam && newUserTeamId ? newUserTeamId : undefined,
+        teamRole: newUserAssignTeam && newUserTeamId ? newUserTeamRole : undefined,
+      });
+
+      onNotify(
+        'success',
+        `User account '${newUserName.trim()}' created successfully!`,
+        'User Created'
+      );
+      setIsAddUserModalOpen(false);
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPassword('Newtonite@2026!');
+      void loadTabContent();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'User creation failed';
+      onNotify('error', msg, 'Creation Error');
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
+
+  const handleAddExistingUserToTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+    const targetTeamId = existingTeamId || selectedTeamId || (teams[0] ? teams[0].id : '');
+    if (!existingUserId) {
+      onNotify('error', 'Please select a user to add.', 'Missing Information');
+      return;
+    }
+    if (!targetTeamId) {
+      onNotify('error', 'Please select a team.', 'Missing Information');
+      return;
+    }
+
+    setIsSubmittingUser(true);
+    try {
+      await addTeamMemberAdmin(token, targetTeamId, {
+        userId: existingUserId,
+        role: existingTeamRole,
+      });
+
+      onNotify('success', 'User assigned to team successfully!', 'Member Added');
+      setIsAddUserModalOpen(false);
+      setExistingUserId('');
+      void loadTabContent();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add member to team';
+      onNotify('error', msg, 'Assignment Error');
+    } finally {
+      setIsSubmittingUser(false);
+    }
+  };
+
   // Outbox retry handler
   const handleRetryJob = async (jobId: string) => {
     if (!token) return;
@@ -331,6 +456,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
             { id: 'branding', label: 'Branding & Appearance', icon: '🎨' },
             { id: 'email', label: 'Email Configuration', icon: '✉️' },
             { id: 'sla', label: 'SLA & Escalation', icon: '⏱️' },
+            { id: 'ai', label: 'AI Operations Assistant', icon: '🤖' },
             { id: 'teams', label: 'Teams & Access Control', icon: '👥' },
             { id: 'security', label: 'Security & Sessions', icon: '🔒' },
             { id: 'workflow', label: 'Workflow Defaults', icon: '📋' },
@@ -1124,6 +1250,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
                       gap: '1.5rem',
                       alignItems: 'center',
                       marginTop: '0.5rem',
+                      flexWrap: 'wrap',
                     }}
                   >
                     <label
@@ -1166,6 +1293,54 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
                       <span>Enable Outbound Email Delivery</span>
                     </label>
                   </div>
+
+                  {/* Gmail & Port 587 Helper Callout */}
+                  {(email.smtpHost.toLowerCase().includes('gmail') ||
+                    (email.smtpPort === 587 && email.smtpSecure)) && (
+                    <div
+                      style={{
+                        padding: '0.75rem 1rem',
+                        backgroundColor: '#eff6ff',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid #bfdbfe',
+                        fontSize: '0.75rem',
+                        color: '#1e40af',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.35rem',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800 }}>📌 SMTP Configuration Tips:</div>
+                      {email.smtpPort === 587 && email.smtpSecure && (
+                        <div>
+                          ⚠️ <strong>Port 587 uses STARTTLS</strong>: Please{' '}
+                          <em>uncheck "Use TLS / SSL"</em> above (or switch Port to{' '}
+                          <strong>465</strong> for direct SSL). Leaving it checked on Port 587
+                          causes an OpenSSL "wrong version number" error.
+                        </div>
+                      )}
+                      {email.smtpHost.toLowerCase().includes('gmail') && (
+                        <div>
+                          🔑 <strong>Gmail App Password Required</strong>: Google blocks standard
+                          Gmail account passwords for SMTP. You must generate a 16-character{' '}
+                          <strong>Google App Password</strong> at{' '}
+                          <a
+                            href="https://myaccount.google.com/apppasswords"
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              color: '#2563eb',
+                              textDecoration: 'underline',
+                              fontWeight: 700,
+                            }}
+                          >
+                            myaccount.google.com/apppasswords
+                          </a>{' '}
+                          and enter it in the SMTP Password field above.
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {email.lastTestError && (
                     <div
@@ -1479,198 +1654,533 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
                     style={{
                       borderBottom: '1px solid var(--border-color)',
                       paddingBottom: '0.75rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      flexWrap: 'wrap',
+                      gap: '0.75rem',
                     }}
                   >
-                    <h2 style={{ fontSize: '1.15rem', fontWeight: 800 }}>
-                      Teams & Access Control (RBAC)
-                    </h2>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      Manage organizational teams, assign roles, and administer member accounts with
-                      last-admin safeguards.
-                    </p>
-                  </div>
+                    <div>
+                      <h2 style={{ fontSize: '1.15rem', fontWeight: 800 }}>
+                        Teams & Access Control (RBAC)
+                      </h2>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Manage operational teams, create user accounts, assign team roles, and
+                        administer member access.
+                      </p>
+                    </div>
 
-                  {/* Filter by Team */}
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 700 }}>Filter Team:</label>
-                    <select
-                      value={selectedTeamId}
-                      onChange={(e) => setSelectedTeamId(e.target.value)}
-                      style={{ maxWidth: '300px' }}
+                    {/* Primary Action Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewUserTeamId(selectedTeamId || (teams[0] ? teams[0].id : ''));
+                        setExistingTeamId(selectedTeamId || (teams[0] ? teams[0].id : ''));
+                        if (allUsers.length > 0 && !existingUserId) {
+                          setExistingUserId(allUsers[0].id);
+                        }
+                        setIsAddUserModalOpen(true);
+                      }}
+                      style={{
+                        padding: '0.55rem 1.15rem',
+                        backgroundColor: '#2563eb',
+                        color: '#fff',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.825rem',
+                        fontWeight: 700,
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        boxShadow: '0 1px 3px rgba(37,99,235,0.2)',
+                      }}
                     >
-                      <option value="">All Operational Teams</option>
-                      {teams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                      <span>＋</span> Add Member / Create User
+                    </button>
                   </div>
 
-                  {/* Members Table */}
+                  {/* Toolbar & View Switcher */}
                   <div
                     style={{
-                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '1rem',
+                      backgroundColor: 'var(--bg-subtle)',
+                      padding: '0.75rem 1rem',
                       borderRadius: 'var(--radius-sm)',
-                      overflow: 'hidden',
+                      border: '1px solid var(--border-color)',
                     }}
                   >
-                    <table
-                      style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}
-                    >
-                      <thead>
-                        <tr
+                    {/* View Switcher Tabs */}
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setTeamsViewMode('memberships')}
+                        style={{
+                          padding: '0.35rem 0.85rem',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.775rem',
+                          fontWeight: 700,
+                          border: '1px solid',
+                          borderColor:
+                            teamsViewMode === 'memberships' ? '#2563eb' : 'var(--border-color)',
+                          backgroundColor: teamsViewMode === 'memberships' ? '#2563eb' : '#fff',
+                          color: teamsViewMode === 'memberships' ? '#fff' : 'var(--text-main)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        👥 Team Memberships ({teamMembers.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTeamsViewMode('all_users')}
+                        style={{
+                          padding: '0.35rem 0.85rem',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.775rem',
+                          fontWeight: 700,
+                          border: '1px solid',
+                          borderColor:
+                            teamsViewMode === 'all_users' ? '#2563eb' : 'var(--border-color)',
+                          backgroundColor: teamsViewMode === 'all_users' ? '#2563eb' : '#fff',
+                          color: teamsViewMode === 'all_users' ? '#fff' : 'var(--text-main)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        👤 All System Users ({allUsers.length})
+                      </button>
+                    </div>
+
+                    {/* Filter or Search based on view mode */}
+                    {teamsViewMode === 'memberships' ? (
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <label
                           style={{
-                            backgroundColor: 'var(--bg-subtle)',
-                            textAlign: 'left',
-                            borderBottom: '1px solid var(--border-color)',
+                            fontSize: '0.775rem',
+                            fontWeight: 700,
+                            color: 'var(--text-muted)',
                           }}
                         >
-                          <th style={{ padding: '0.65rem 1rem' }}>User</th>
-                          <th style={{ padding: '0.65rem 1rem' }}>Team</th>
-                          <th style={{ padding: '0.65rem 1rem' }}>Current Role</th>
-                          <th style={{ padding: '0.65rem 1rem' }}>Status</th>
-                          <th style={{ padding: '0.65rem 1rem', textAlign: 'right' }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {teamMembers.map((m) => (
-                          <tr key={m.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <div style={{ fontWeight: 750 }}>{m.userName}</div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                {m.userEmail}
-                              </div>
-                            </td>
-                            <td style={{ padding: '0.75rem 1rem' }}>{m.teamName}</td>
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <RoleBadge role={m.role} />
-                            </td>
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <span
-                                style={{
-                                  padding: '0.2rem 0.5rem',
-                                  borderRadius: '9999px',
-                                  fontSize: '0.7rem',
-                                  fontWeight: 700,
-                                  backgroundColor: m.userIsActive ? '#dcfce7' : '#fee2e2',
-                                  color: m.userIsActive ? '#166534' : '#991b1b',
-                                }}
-                              >
-                                {m.userIsActive ? 'Active' : 'Deactivated'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  gap: '0.5rem',
-                                  justifyContent: 'flex-end',
-                                }}
-                              >
-                                {/* Role selector */}
-                                <select
-                                  value={m.role}
-                                  onChange={async (e) => {
-                                    if (!token) return;
-                                    try {
-                                      await updateMemberRoleAdmin(
-                                        token,
-                                        m.teamId,
-                                        m.id,
-                                        e.target.value
-                                      );
-                                      onNotify(
-                                        'success',
-                                        `Updated ${m.userName} to ${e.target.value}`,
-                                        'Role Updated'
-                                      );
-                                      void loadTabContent();
-                                    } catch (err: unknown) {
-                                      const msg =
-                                        err instanceof Error ? err.message : 'Role update failed';
-                                      onNotify('error', msg, 'Update Error');
-                                    }
-                                  }}
-                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                >
-                                  <option value="VIEWER">VIEWER</option>
-                                  <option value="MEMBER">MEMBER</option>
-                                  <option value="LEAD">LEAD</option>
-                                  <option value="ADMIN">ADMIN</option>
-                                </select>
-
-                                {/* Active toggle */}
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (!token) return;
-                                    try {
-                                      await toggleUserActiveAdmin(token, m.userId, !m.userIsActive);
-                                      onNotify(
-                                        'success',
-                                        `User account ${m.userIsActive ? 'deactivated' : 'activated'}`,
-                                        'Status Changed'
-                                      );
-                                      void loadTabContent();
-                                    } catch (err: unknown) {
-                                      const msg =
-                                        err instanceof Error ? err.message : 'Status update failed';
-                                      onNotify('error', msg, 'Status Error');
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '0.25rem 0.5rem',
-                                    fontSize: '0.75rem',
-                                    backgroundColor: '#f1f5f9',
-                                    borderRadius: '4px',
-                                  }}
-                                >
-                                  {m.userIsActive ? 'Deactivate' : 'Activate'}
-                                </button>
-
-                                {/* Remove button */}
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (
-                                      !token ||
-                                      !window.confirm(
-                                        `Remove ${m.userName} from team ${m.teamName}?`
-                                      )
-                                    )
-                                      return;
-                                    try {
-                                      await removeMemberAdmin(token, m.teamId, m.id);
-                                      onNotify(
-                                        'success',
-                                        `Removed ${m.userName} from team`,
-                                        'Member Removed'
-                                      );
-                                      void loadTabContent();
-                                    } catch (err: unknown) {
-                                      const msg =
-                                        err instanceof Error ? err.message : 'Removal failed';
-                                      onNotify('error', msg, 'Removal Error');
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '0.25rem 0.5rem',
-                                    fontSize: '0.75rem',
-                                    backgroundColor: '#fee2e2',
-                                    color: '#991b1b',
-                                    borderRadius: '4px',
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          Filter Team:
+                        </label>
+                        <select
+                          value={selectedTeamId}
+                          onChange={(e) => setSelectedTeamId(e.target.value)}
+                          style={{
+                            maxWidth: '260px',
+                            padding: '0.3rem 0.6rem',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <option value="">All Operational Teams</option>
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="Search users by name or email..."
+                          value={userSearchQuery}
+                          onChange={(e) => setUserSearchQuery(e.target.value)}
+                          style={{
+                            padding: '0.3rem 0.75rem',
+                            fontSize: '0.8rem',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border-color)',
+                            minWidth: '240px',
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
+
+                  {/* VIEW 1: TEAM MEMBERSHIPS TABLE */}
+                  {teamsViewMode === 'memberships' && (
+                    <div
+                      style={{
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-sm)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <table
+                        style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              backgroundColor: 'var(--bg-subtle)',
+                              textAlign: 'left',
+                              borderBottom: '1px solid var(--border-color)',
+                            }}
+                          >
+                            <th style={{ padding: '0.65rem 1rem' }}>User</th>
+                            <th style={{ padding: '0.65rem 1rem' }}>Team</th>
+                            <th style={{ padding: '0.65rem 1rem' }}>Role in Team</th>
+                            <th style={{ padding: '0.65rem 1rem' }}>Status</th>
+                            <th style={{ padding: '0.65rem 1rem', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {teamMembers.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                style={{
+                                  padding: '2rem',
+                                  textAlign: 'center',
+                                  color: 'var(--text-muted)',
+                                }}
+                              >
+                                No team members found for the selected team filter.
+                              </td>
+                            </tr>
+                          ) : (
+                            teamMembers.map((m) => (
+                              <tr
+                                key={m.id}
+                                style={{ borderBottom: '1px solid var(--border-color)' }}
+                              >
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  <div style={{ fontWeight: 750 }}>{m.userName}</div>
+                                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    {m.userEmail}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem' }}>{m.teamName}</td>
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  <RoleBadge role={m.role} />
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  <span
+                                    style={{
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '9999px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: 700,
+                                      backgroundColor: m.userIsActive ? '#dcfce7' : '#fee2e2',
+                                      color: m.userIsActive ? '#166534' : '#991b1b',
+                                    }}
+                                  >
+                                    {m.userIsActive ? 'Active' : 'Deactivated'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: '0.5rem',
+                                      justifyContent: 'flex-end',
+                                    }}
+                                  >
+                                    {/* Role selector */}
+                                    <select
+                                      value={m.role}
+                                      onChange={async (e) => {
+                                        if (!token) return;
+                                        try {
+                                          await updateMemberRoleAdmin(
+                                            token,
+                                            m.teamId,
+                                            m.id,
+                                            e.target.value
+                                          );
+                                          onNotify(
+                                            'success',
+                                            `Updated ${m.userName} to ${e.target.value}`,
+                                            'Role Updated'
+                                          );
+                                          void loadTabContent();
+                                        } catch (err: unknown) {
+                                          const msg =
+                                            err instanceof Error
+                                              ? err.message
+                                              : 'Role update failed';
+                                          onNotify('error', msg, 'Update Error');
+                                        }
+                                      }}
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                    >
+                                      <option value="VIEWER">VIEWER</option>
+                                      <option value="MEMBER">MEMBER</option>
+                                      <option value="LEAD">LEAD</option>
+                                      <option value="ADMIN">ADMIN</option>
+                                    </select>
+
+                                    {/* Active toggle */}
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!token) return;
+                                        try {
+                                          await toggleUserActiveAdmin(
+                                            token,
+                                            m.userId,
+                                            !m.userIsActive
+                                          );
+                                          onNotify(
+                                            'success',
+                                            `User account ${m.userIsActive ? 'deactivated' : 'activated'}`,
+                                            'Status Changed'
+                                          );
+                                          void loadTabContent();
+                                        } catch (err: unknown) {
+                                          const msg =
+                                            err instanceof Error
+                                              ? err.message
+                                              : 'Status update failed';
+                                          onNotify('error', msg, 'Status Error');
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '0.25rem 0.5rem',
+                                        fontSize: '0.75rem',
+                                        backgroundColor: '#f1f5f9',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      {m.userIsActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+
+                                    {/* Remove button */}
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (
+                                          !token ||
+                                          !window.confirm(
+                                            `Remove ${m.userName} from team ${m.teamName}?`
+                                          )
+                                        )
+                                          return;
+                                        try {
+                                          await removeMemberAdmin(token, m.teamId, m.id);
+                                          onNotify(
+                                            'success',
+                                            `Removed ${m.userName} from team`,
+                                            'Member Removed'
+                                          );
+                                          void loadTabContent();
+                                        } catch (err: unknown) {
+                                          const msg =
+                                            err instanceof Error ? err.message : 'Removal failed';
+                                          onNotify('error', msg, 'Removal Error');
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '0.25rem 0.5rem',
+                                        fontSize: '0.75rem',
+                                        backgroundColor: '#fee2e2',
+                                        color: '#991b1b',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* VIEW 2: ALL SYSTEM USERS TABLE */}
+                  {teamsViewMode === 'all_users' && (
+                    <div
+                      style={{
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 'var(--radius-sm)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <table
+                        style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}
+                      >
+                        <thead>
+                          <tr
+                            style={{
+                              backgroundColor: 'var(--bg-subtle)',
+                              textAlign: 'left',
+                              borderBottom: '1px solid var(--border-color)',
+                            }}
+                          >
+                            <th style={{ padding: '0.65rem 1rem' }}>User Profile</th>
+                            <th style={{ padding: '0.65rem 1rem' }}>System Role</th>
+                            <th style={{ padding: '0.65rem 1rem' }}>Assigned Teams</th>
+                            <th style={{ padding: '0.65rem 1rem' }}>Account Status</th>
+                            <th style={{ padding: '0.65rem 1rem', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allUsers
+                            .filter(
+                              (u) =>
+                                !userSearchQuery ||
+                                u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+                                u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
+                            )
+                            .map((u) => (
+                              <tr
+                                key={u.id}
+                                style={{ borderBottom: '1px solid var(--border-color)' }}
+                              >
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  <div style={{ fontWeight: 750 }}>{u.name}</div>
+                                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    {u.email}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  <span
+                                    style={{
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '4px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: 700,
+                                      backgroundColor:
+                                        u.systemRole === 'SYSTEM_ADMIN' ? '#eff6ff' : '#f1f5f9',
+                                      color:
+                                        u.systemRole === 'SYSTEM_ADMIN' ? '#1d4ed8' : '#475569',
+                                      border:
+                                        u.systemRole === 'SYSTEM_ADMIN'
+                                          ? '1px solid #bfdbfe'
+                                          : '1px solid #e2e8f0',
+                                    }}
+                                  >
+                                    {u.systemRole}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  {u.memberships.length === 0 ? (
+                                    <span
+                                      style={{
+                                        fontSize: '0.75rem',
+                                        color: 'var(--text-muted)',
+                                        fontStyle: 'italic',
+                                      }}
+                                    >
+                                      No team memberships
+                                    </span>
+                                  ) : (
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '0.35rem',
+                                      }}
+                                    >
+                                      {u.memberships.map((m) => (
+                                        <span
+                                          key={m.id}
+                                          style={{
+                                            padding: '0.15rem 0.45rem',
+                                            borderRadius: '4px',
+                                            fontSize: '0.675rem',
+                                            backgroundColor: '#f8fafc',
+                                            border: '1px solid #e2e8f0',
+                                            color: '#334155',
+                                          }}
+                                        >
+                                          <strong>{m.teamName}</strong> ({m.role})
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem' }}>
+                                  <span
+                                    style={{
+                                      padding: '0.2rem 0.5rem',
+                                      borderRadius: '9999px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: 700,
+                                      backgroundColor: u.isActive ? '#dcfce7' : '#fee2e2',
+                                      color: u.isActive ? '#166534' : '#991b1b',
+                                    }}
+                                  >
+                                    {u.isActive ? 'Active' : 'Deactivated'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: '0.5rem',
+                                      justifyContent: 'flex-end',
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setExistingUserId(u.id);
+                                        setUserModalTab('add_existing');
+                                        setIsAddUserModalOpen(true);
+                                      }}
+                                      style={{
+                                        padding: '0.25rem 0.5rem',
+                                        fontSize: '0.75rem',
+                                        backgroundColor: '#eff6ff',
+                                        color: '#1d4ed8',
+                                        border: '1px solid #bfdbfe',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      + Add to Team
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!token) return;
+                                        try {
+                                          await toggleUserActiveAdmin(token, u.id, !u.isActive);
+                                          onNotify(
+                                            'success',
+                                            `User ${u.name} ${u.isActive ? 'deactivated' : 'activated'}`,
+                                            'Status Updated'
+                                          );
+                                          void loadTabContent();
+                                        } catch (err: unknown) {
+                                          const msg =
+                                            err instanceof Error
+                                              ? err.message
+                                              : 'Status update failed';
+                                          onNotify('error', msg, 'Status Error');
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '0.25rem 0.5rem',
+                                        fontSize: '0.75rem',
+                                        backgroundColor: '#f1f5f9',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      {u.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2435,6 +2945,394 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
                   </div>
                 </div>
               )}
+
+              {/* TAB 11: AI OPERATIONS ASSISTANT */}
+              {activeTab === 'ai' && ai && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleSave('ai', ai);
+                  }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}
+                >
+                  <div
+                    style={{
+                      borderBottom: '1px solid var(--border-color)',
+                      paddingBottom: '0.75rem',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div>
+                      <h2 style={{ fontSize: '1.15rem', fontWeight: 800 }}>
+                        AI Operations Assistant Configuration
+                      </h2>
+                      <p
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'var(--text-muted)',
+                          marginTop: '0.15rem',
+                        }}
+                      >
+                        Configure LLM provider parameters, credentials, security boundaries, and
+                        default prompts.
+                      </p>
+                    </div>
+                    <span
+                      style={{
+                        padding: '0.25rem 0.65rem',
+                        borderRadius: '9999px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        backgroundColor: ai.enabled
+                          ? 'rgba(16, 185, 129, 0.1)'
+                          : 'rgba(239, 68, 68, 0.1)',
+                        color: ai.enabled ? '#10b981' : '#ef4444',
+                      }}
+                    >
+                      {ai.enabled ? 'Assistant Enabled' : 'Assistant Disabled'}
+                    </span>
+                  </div>
+
+                  {/* Enable / Disable Switch */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.75rem 1rem',
+                      backgroundColor: 'var(--bg-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    <input
+                      id="ai-enable-toggle"
+                      type="checkbox"
+                      checked={ai.enabled}
+                      onChange={(e) => {
+                        setAi({ ...ai, enabled: e.target.checked });
+                        setHasUnsavedChanges(true);
+                      }}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                    <label
+                      htmlFor="ai-enable-toggle"
+                      style={{ fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer' }}
+                    >
+                      Enable AI Operations Assistant for authorized operators
+                    </label>
+                  </div>
+
+                  {/* Provider & Model */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          marginBottom: '0.35rem',
+                        }}
+                      >
+                        AI Provider
+                      </label>
+                      <select
+                        value={ai.provider}
+                        onChange={(e) => {
+                          const newProvider = e.target.value as
+                            'groq' | 'gemini' | 'openai' | 'anthropic' | 'mock';
+                          let newModel = ai.model;
+                          if (
+                            newProvider === 'groq' &&
+                            (ai.model === 'gemini-1.5-flash' || !ai.model)
+                          ) {
+                            newModel = 'llama-3.1-8b-instant';
+                          } else if (
+                            newProvider === 'gemini' &&
+                            (ai.model === 'llama-3.1-8b-instant' ||
+                              ai.model === 'llama-3.3-70b-versatile' ||
+                              !ai.model)
+                          ) {
+                            newModel = 'gemini-1.5-flash';
+                          }
+                          setAi({
+                            ...ai,
+                            provider: newProvider,
+                            model: newModel,
+                          });
+                          setHasUnsavedChanges(true);
+                        }}
+                        style={{ width: '100%' }}
+                      >
+                        <option value="groq">
+                          Groq (Ultra-Fast Inference — Official groq-sdk)
+                        </option>
+                        <option value="gemini">Google Gemini (Official @google/genai SDK)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          marginBottom: '0.35rem',
+                        }}
+                      >
+                        Model Identifier
+                      </label>
+                      <input
+                        type="text"
+                        value={ai.model}
+                        onChange={(e) => {
+                          setAi({ ...ai, model: e.target.value });
+                          setHasUnsavedChanges(true);
+                        }}
+                        placeholder={
+                          ai.provider === 'groq' ? 'llama-3.1-8b-instant' : 'gemini-1.5-flash'
+                        }
+                        required
+                        style={{ width: '100%' }}
+                      />
+                      {/* Model presets */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: '0.35rem',
+                          marginTop: '0.35rem',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {(ai.provider === 'groq'
+                          ? [
+                              'openai/gpt-oss-120b',
+                              'openai/gpt-oss-20b',
+                              'llama-3.1-8b-instant',
+                              'llama-3.3-70b-versatile',
+                            ]
+                          : ['gemini-1.5-flash', 'gemini-1.5-pro']
+                        ).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => {
+                              setAi({ ...ai, model: m });
+                              setHasUnsavedChanges(true);
+                            }}
+                            style={{
+                              fontSize: '0.68rem',
+                              padding: '0.15rem 0.45rem',
+                              borderRadius: '4px',
+                              backgroundColor:
+                                ai.model === m ? 'rgba(37, 99, 235, 0.1)' : 'var(--bg-subtle)',
+                              color: ai.model === m ? 'var(--primary-blue)' : 'var(--text-muted)',
+                              border: `1px solid ${ai.model === m ? 'var(--primary-blue)' : 'var(--border-color)'}`,
+                              cursor: 'pointer',
+                              fontWeight: ai.model === m ? 700 : 500,
+                            }}
+                          >
+                            {m === 'openai/gpt-oss-120b'
+                              ? '⭐ openai/gpt-oss-120b (Recommended)'
+                              : m}
+                          </button>
+                        ))}
+                      </div>
+                      {ai.provider === 'groq' && (
+                        <p
+                          style={{
+                            fontSize: '0.675rem',
+                            color: 'var(--text-muted)',
+                            marginTop: '0.25rem',
+                          }}
+                        >
+                          Tip: If your Groq key does not have Meta Llama permissions, use{' '}
+                          <strong>openai/gpt-oss-120b</strong> or{' '}
+                          <strong>openai/gpt-oss-20b</strong> (active on your API key).
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* API Key */}
+                  <div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '0.35rem',
+                      }}
+                    >
+                      <label style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                        {ai.provider === 'groq' ? 'Groq API Key (gsk_...)' : 'Gemini API Key'}{' '}
+                        (Server-Side Storage)
+                      </label>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {ai.provider === 'groq'
+                          ? 'Obtain free key at console.groq.com/keys'
+                          : 'Never exposed in browser network payloads'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        value={ai.apiKey || ''}
+                        onChange={(e) => {
+                          setAi({ ...ai, apiKey: e.target.value });
+                          setHasUnsavedChanges(true);
+                        }}
+                        placeholder={
+                          ai.provider === 'groq'
+                            ? 'gsk_... (leave as •••••••• to keep existing)'
+                            : 'Enter API key (leave as •••••••• to keep existing)'
+                        }
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        style={{
+                          padding: '0.45rem 0.85rem',
+                          backgroundColor: '#f1f5f9',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showApiKey ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Temperature & Max Tokens */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          marginBottom: '0.35rem',
+                        }}
+                      >
+                        <label style={{ fontSize: '0.75rem', fontWeight: 700 }}>
+                          Temperature (Creativity vs Determinism)
+                        </label>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            color: 'var(--primary-blue)',
+                          }}
+                        >
+                          {ai.temperature.toFixed(2)}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={ai.temperature}
+                        onChange={(e) => {
+                          setAi({ ...ai, temperature: parseFloat(e.target.value) });
+                          setHasUnsavedChanges(true);
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          fontSize: '0.65rem',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        <span>0.0 (Deterministic)</span>
+                        <span>1.0 (Creative)</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          marginBottom: '0.35rem',
+                        }}
+                      >
+                        Max Output Tokens
+                      </label>
+                      <input
+                        type="number"
+                        min="100"
+                        max="4000"
+                        step="100"
+                        value={ai.maxTokens}
+                        onChange={(e) => {
+                          setAi({ ...ai, maxTokens: parseInt(e.target.value, 10) || 1000 });
+                          setHasUnsavedChanges(true);
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* System Prompt */}
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        marginBottom: '0.35rem',
+                      }}
+                    >
+                      Base Operational System Prompt
+                    </label>
+                    <textarea
+                      value={ai.systemPrompt || ''}
+                      onChange={(e) => {
+                        setAi({ ...ai, systemPrompt: e.target.value });
+                        setHasUnsavedChanges(true);
+                      }}
+                      rows={4}
+                      style={{ width: '100%', fontFamily: 'monospace', fontSize: '0.8rem' }}
+                    />
+                  </div>
+
+                  {/* Save Button */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      gap: '0.75rem',
+                      marginTop: '0.5rem',
+                    }}
+                  >
+                    <button
+                      type="submit"
+                      disabled={isSaving}
+                      style={{
+                        padding: '0.55rem 1.5rem',
+                        backgroundColor: 'var(--primary-blue)',
+                        color: '#fff',
+                        borderRadius: 'var(--radius-sm)',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        cursor: isSaving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {isSaving ? 'Saving Changes...' : 'Save AI Configuration'}
+                    </button>
+                  </div>
+                </form>
+              )}
             </>
           )}
         </div>
@@ -2520,6 +3418,473 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onNotify, onBranding
                 {isTestingEmail ? 'Sending...' : 'Send Test Message'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Member / Create User Modal */}
+      {isAddUserModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: '1rem',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: 'var(--radius-md)',
+              padding: '1.75rem',
+              width: '520px',
+              maxWidth: '95vw',
+              boxShadow: 'var(--shadow-popover)',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '1rem',
+              }}
+            >
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>
+                  User & Team Member Management
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Create new user accounts or assign existing users to teams with role-based access.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddUserModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.25rem',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Mode Switcher Tabs */}
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.5rem',
+                borderBottom: '1px solid var(--border-color)',
+                marginBottom: '1.25rem',
+                paddingBottom: '0.5rem',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setUserModalTab('create_new')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  backgroundColor: userModalTab === 'create_new' ? '#2563eb' : 'transparent',
+                  color: userModalTab === 'create_new' ? '#fff' : 'var(--text-main)',
+                  cursor: 'pointer',
+                }}
+              >
+                ➕ Create New User
+              </button>
+              <button
+                type="button"
+                onClick={() => setUserModalTab('add_existing')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  backgroundColor: userModalTab === 'add_existing' ? '#2563eb' : 'transparent',
+                  color: userModalTab === 'add_existing' ? '#fff' : 'var(--text-main)',
+                  cursor: 'pointer',
+                }}
+              >
+                👥 Add Existing User to Team
+              </button>
+            </div>
+
+            {/* TAB 1: CREATE NEW USER */}
+            {userModalTab === 'create_new' && (
+              <form
+                onSubmit={handleCreateUser}
+                style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+              >
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rahul Sharma"
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                    required
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Email Address *
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="e.g. rahul@newtonite.dev"
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    required
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    <label style={{ fontSize: '0.75rem', fontWeight: 700 }}>Password *</label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewUserPassword(`Newtonite@${Math.floor(1000 + Math.random() * 9000)}!`)
+                      }
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        fontSize: '0.7rem',
+                        color: '#2563eb',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      🎲 Generate Random
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                    required
+                    style={{ width: '100%', fontFamily: 'monospace' }}
+                  />
+                  <span style={{ fontSize: '0.675rem', color: 'var(--text-muted)' }}>
+                    Minimum 6 characters. User will use this to sign in.
+                  </span>
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    System Role
+                  </label>
+                  <select
+                    value={newUserSystemRole}
+                    onChange={(e) =>
+                      setNewUserSystemRole(e.target.value as 'USER' | 'SYSTEM_ADMIN')
+                    }
+                    style={{ width: '100%' }}
+                  >
+                    <option value="USER">USER — Standard User (Team-level permissions)</option>
+                    <option value="SYSTEM_ADMIN">
+                      SYSTEM_ADMIN — Full Administrator (Global Settings & Audit access)
+                    </option>
+                  </select>
+                </div>
+
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg-subtle)',
+                    padding: '0.75rem',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      marginBottom: newUserAssignTeam ? '0.75rem' : 0,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={newUserAssignTeam}
+                      onChange={(e) => setNewUserAssignTeam(e.target.checked)}
+                    />
+                    Assign to an Operational Team immediately
+                  </label>
+
+                  {newUserAssignTeam && (
+                    <div
+                      style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}
+                    >
+                      <div>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            marginBottom: '0.25rem',
+                          }}
+                        >
+                          Select Team
+                        </label>
+                        <select
+                          value={newUserTeamId}
+                          onChange={(e) => setNewUserTeamId(e.target.value)}
+                          style={{ width: '100%', fontSize: '0.775rem' }}
+                        >
+                          {teams.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            display: 'block',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            marginBottom: '0.25rem',
+                          }}
+                        >
+                          Team Role
+                        </label>
+                        <select
+                          value={newUserTeamRole}
+                          onChange={(e) =>
+                            setNewUserTeamRole(
+                              e.target.value as 'VIEWER' | 'MEMBER' | 'LEAD' | 'ADMIN'
+                            )
+                          }
+                          style={{ width: '100%', fontSize: '0.775rem' }}
+                        >
+                          <option value="VIEWER">VIEWER (Read-only)</option>
+                          <option value="MEMBER">MEMBER (Standard operator)</option>
+                          <option value="LEAD">LEAD (Team leader / Escalations)</option>
+                          <option value="ADMIN">ADMIN (Team manager)</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '0.75rem',
+                    marginTop: '0.5rem',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsAddUserModalOpen(false)}
+                    style={{
+                      padding: '0.45rem 1rem',
+                      backgroundColor: '#f1f5f9',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingUser}
+                    style={{
+                      padding: '0.45rem 1.25rem',
+                      backgroundColor: '#2563eb',
+                      color: '#fff',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isSubmittingUser ? 'Creating...' : 'Create User Account'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 2: ADD EXISTING USER TO TEAM */}
+            {userModalTab === 'add_existing' && (
+              <form
+                onSubmit={handleAddExistingUserToTeam}
+                style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+              >
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Select User *
+                  </label>
+                  <select
+                    value={existingUserId}
+                    onChange={(e) => setExistingUserId(e.target.value)}
+                    required
+                    style={{ width: '100%' }}
+                  >
+                    <option value="">-- Choose a registered user --</option>
+                    {allUsers.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.email}) {!u.isActive ? '[Deactivated]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Select Target Team *
+                  </label>
+                  <select
+                    value={existingTeamId || selectedTeamId || (teams[0] ? teams[0].id : '')}
+                    onChange={(e) => setExistingTeamId(e.target.value)}
+                    required
+                    style={{ width: '100%' }}
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      marginBottom: '0.35rem',
+                    }}
+                  >
+                    Assign Role in Team *
+                  </label>
+                  <select
+                    value={existingTeamRole}
+                    onChange={(e) =>
+                      setExistingTeamRole(e.target.value as 'VIEWER' | 'MEMBER' | 'LEAD' | 'ADMIN')
+                    }
+                    style={{ width: '100%' }}
+                  >
+                    <option value="VIEWER">VIEWER (Read-only)</option>
+                    <option value="MEMBER">MEMBER (Standard operator)</option>
+                    <option value="LEAD">LEAD (Team leader / Escalations)</option>
+                    <option value="ADMIN">ADMIN (Team manager)</option>
+                  </select>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '0.75rem',
+                    marginTop: '0.5rem',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setIsAddUserModalOpen(false)}
+                    style={{
+                      padding: '0.45rem 1rem',
+                      backgroundColor: '#f1f5f9',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingUser || !existingUserId}
+                    style={{
+                      padding: '0.45rem 1.25rem',
+                      backgroundColor: '#2563eb',
+                      color: '#fff',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isSubmittingUser ? 'Adding...' : 'Add Member to Team'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

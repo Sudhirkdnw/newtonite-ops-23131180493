@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type {
-  WorkItemSummaryDTO,
-  WorkItemStatus,
-  CreateWorkItemInput,
-  UpdateWorkItemInput,
-  BrandingSettingsDTO,
+import {
+  type WorkItemSummaryDTO,
+  type WorkItemStatus,
+  type CreateWorkItemInput,
+  type UpdateWorkItemInput,
+  type BrandingSettingsDTO,
+  DEFAULT_NEWTONITE_LOGO,
 } from '@newtonite/shared';
 import {
   claimWorkItem,
@@ -15,12 +16,14 @@ import {
   fetchPublicBranding,
 } from '../services/api';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import { AppLayout } from '../components/layout/AppLayout';
+import { AppLayout, type SettingsTab } from '../components/layout/AppLayout';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { WorkItemsPage } from '../pages/WorkItemsPage';
 import { WorkItemDetailPage } from '../pages/WorkItemDetailPage';
 import { SettingsPage } from '../pages/SettingsPage';
+import { TeamListPage } from '../pages/TeamListPage';
+import { AiAssistantPage } from '../pages/AiAssistantPage';
 import { WorkItemFormModal } from '../components/WorkItemFormModal';
 import { TransitionModal } from '../components/TransitionModal';
 import { ToastContainer, type ToastMessage } from '../components/ui/Toast';
@@ -29,13 +32,47 @@ const DashboardAppContent: React.FC = () => {
   const { token, currentUser, isLoading: isAuthLoading } = useAuth();
 
   // Navigation state
-  const [currentView, setCurrentView] = useState<'dashboard' | 'items' | 'detail' | 'settings'>(
-    'dashboard'
-  );
+  const [currentView, setCurrentView] = useState<
+    'dashboard' | 'items' | 'detail' | 'teams' | 'settings' | 'assistant'
+  >('dashboard');
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
-  // Dynamic Branding State
-  const [branding, setBranding] = useState<BrandingSettingsDTO | null>(null);
+  const handleSelectSettingsTab = useCallback((tab: SettingsTab) => {
+    setSettingsTab(tab);
+    setCurrentView('settings');
+  }, []);
+
+  // Dynamic Branding State with persistent localStorage cache
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(() => {
+    try {
+      const cached = localStorage.getItem('newtonite_branding_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...parsed,
+            logoUrl:
+              parsed.logoUrl && parsed.logoUrl !== 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='
+                ? parsed.logoUrl
+                : DEFAULT_NEWTONITE_LOGO,
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      appName: 'Newtonite Ops',
+      logoUrl: DEFAULT_NEWTONITE_LOGO,
+      faviconUrl: null,
+      browserTitle: 'Newtonite Ops — Operations Under Pressure',
+      primaryColor: '#2563eb',
+      accentColor: '#1d4ed8',
+      themeDefault: 'light',
+      sidebarTheme: 'light',
+    };
+  });
 
   // System Health
   const [systemReady, setSystemReady] = useState<boolean | null>(null);
@@ -67,15 +104,27 @@ const DashboardAppContent: React.FC = () => {
 
   // Apply branding dynamically to DOM and CSS custom variables
   const applyBranding = useCallback((b: BrandingSettingsDTO) => {
-    setBranding(b);
-    if (b.browserTitle) {
-      document.title = b.browserTitle;
+    const finalLogo =
+      b.logoUrl && b.logoUrl !== 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='
+        ? b.logoUrl
+        : DEFAULT_NEWTONITE_LOGO;
+    const finalBranding: BrandingSettingsDTO = { ...b, logoUrl: finalLogo };
+
+    setBranding(finalBranding);
+    try {
+      localStorage.setItem('newtonite_branding_cache', JSON.stringify(finalBranding));
+    } catch {
+      // ignore
     }
-    if (b.primaryColor) {
-      document.documentElement.style.setProperty('--primary-blue', b.primaryColor);
+
+    if (finalBranding.browserTitle) {
+      document.title = finalBranding.browserTitle;
     }
-    if (b.accentColor) {
-      document.documentElement.style.setProperty('--primary-blue-hover', b.accentColor);
+    if (finalBranding.primaryColor) {
+      document.documentElement.style.setProperty('--primary-blue', finalBranding.primaryColor);
+    }
+    if (finalBranding.accentColor) {
+      document.documentElement.style.setProperty('--primary-blue-hover', finalBranding.accentColor);
     }
   }, []);
 
@@ -284,6 +333,8 @@ const DashboardAppContent: React.FC = () => {
       <AppLayout
         currentView={currentView}
         setCurrentView={setCurrentView}
+        activeSettingsTab={settingsTab}
+        onSelectSettingsTab={handleSelectSettingsTab}
         systemReady={systemReady}
         dbLatency={dbLatency}
         onOpenCreate={handleOpenCreate}
@@ -318,8 +369,25 @@ const DashboardAppContent: React.FC = () => {
           />
         )}
 
+        {currentView === 'teams' && <TeamListPage onNotify={addToast} />}
+
         {currentView === 'settings' && (
-          <SettingsPage onNotify={addToast} onBrandingUpdated={applyBranding} />
+          <SettingsPage
+            initialTab={settingsTab}
+            onNotify={addToast}
+            onBrandingUpdated={applyBranding}
+          />
+        )}
+
+        {currentView === 'assistant' && (
+          <AiAssistantPage
+            onSelectItem={(id: string) => {
+              setSelectedItemId(id);
+              setCurrentView('detail');
+            }}
+            onNavigateSettings={() => handleSelectSettingsTab('ai')}
+            onNotify={(type, message, title) => addToast(type, message, title)}
+          />
         )}
       </AppLayout>
 

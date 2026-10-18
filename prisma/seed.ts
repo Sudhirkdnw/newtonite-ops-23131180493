@@ -8,6 +8,7 @@ import {
   ActivityAction,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_NEWTONITE_LOGO } from '../packages/shared/src';
 
 const prisma = new PrismaClient();
 
@@ -378,6 +379,26 @@ async function main() {
         body: 'Reviewed ledger entries and confirmed duplicate debit reversed. Marked as completed.',
       },
     ],
+  });
+
+  console.log('  Ensuring default branding settings and logo in database...');
+  await prisma.systemSetting.upsert({
+    where: { key: 'branding' },
+    update: {},
+    create: {
+      category: 'branding',
+      key: 'branding',
+      value: {
+        appName: 'Newtonite Ops',
+        logoUrl: DEFAULT_NEWTONITE_LOGO,
+        faviconUrl: null,
+        browserTitle: 'Newtonite Ops — Operations Under Pressure',
+        primaryColor: '#2563eb',
+        accentColor: '#1d4ed8',
+        themeDefault: 'light',
+        sidebarTheme: 'light',
+      },
+    },
   });
 
   console.log('✅ Seeding completed successfully!');

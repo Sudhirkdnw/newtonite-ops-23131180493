@@ -1,10 +1,26 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { RoleBadge } from '../ui/Badge';
+
+export type SettingsTab =
+  | 'general'
+  | 'branding'
+  | 'email'
+  | 'sla'
+  | 'ai'
+  | 'teams'
+  | 'security'
+  | 'workflow'
+  | 'notifications'
+  | 'jobs'
+  | 'audit';
 
 interface AppLayoutProps {
-  currentView: 'dashboard' | 'items' | 'detail' | 'settings';
-  setCurrentView: (view: 'dashboard' | 'items' | 'detail' | 'settings') => void;
+  currentView: 'dashboard' | 'items' | 'detail' | 'teams' | 'settings' | 'assistant';
+  setCurrentView: (
+    view: 'dashboard' | 'items' | 'detail' | 'teams' | 'settings' | 'assistant'
+  ) => void;
+  activeSettingsTab?: SettingsTab;
+  onSelectSettingsTab?: (tab: SettingsTab) => void;
   systemReady: boolean | null;
   dbLatency?: number;
   onOpenCreate: () => void;
@@ -13,16 +29,132 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
-const DEMO_PERSONAS = [
-  { name: 'Bob Lead', email: 'bob.lead@newtonite.dev', role: 'LEAD' },
-  { name: 'Evan Member', email: 'evan.member@newtonite.dev', role: 'MEMBER' },
-  { name: 'Ian Viewer', email: 'ian.viewer@newtonite.dev', role: 'VIEWER' },
-  { name: 'Alice Admin', email: 'alice.admin@newtonite.dev', role: 'ADMIN' },
-];
+/* Professional SVG Icons (Lucide / Feather style) */
+const IconDashboard: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="3" width="7" height="9" rx="1.5" />
+    <rect x="14" y="3" width="7" height="5" rx="1.5" />
+    <rect x="14" y="12" width="7" height="9" rx="1.5" />
+    <rect x="3" y="16" width="7" height="5" rx="1.5" />
+  </svg>
+);
+
+const IconTasks: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+  </svg>
+);
+
+const IconTeams: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+
+const IconNotification: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </svg>
+);
+
+const IconAssistant: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+    <rect x="4" y="8" width="16" height="12" rx="3" />
+    <path d="M9 13v2" />
+    <path d="M15 13v2" />
+    <path d="M2 14h2" />
+    <path d="M20 14h2" />
+  </svg>
+);
+
+const IconSettings: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+const IconPlus: React.FC<{ size?: number }> = ({ size = 15 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
   currentView,
   setCurrentView,
+  activeSettingsTab = 'general',
+  onSelectSettingsTab,
   systemReady,
   dbLatency,
   onOpenCreate,
@@ -30,10 +162,83 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   logoUrl,
   children,
 }) => {
-  const { currentUser, switchPersona, logout } = useAuth();
+  const { currentUser, logout } = useAuth();
 
   const userRole = currentUser?.memberships[0]?.role || 'ADMIN';
   const teamName = currentUser?.memberships[0]?.teamName || 'Platform Ops';
+
+  // Navigation handlers
+  const handleNavDashboard = () => {
+    setCurrentView('dashboard');
+  };
+
+  const handleNavTasks = () => {
+    setCurrentView('items');
+  };
+
+  const handleNavTeams = () => {
+    setCurrentView('teams');
+  };
+
+  const handleNavNotifications = () => {
+    if (onSelectSettingsTab) {
+      onSelectSettingsTab('notifications');
+    } else {
+      setCurrentView('settings');
+    }
+  };
+
+  const handleNavAssistant = () => {
+    setCurrentView('assistant');
+  };
+
+  const handleNavSettings = () => {
+    if (onSelectSettingsTab) {
+      onSelectSettingsTab('general');
+    } else {
+      setCurrentView('settings');
+    }
+  };
+
+  // Determine active item
+  const isDashboardActive = currentView === 'dashboard';
+  const isTasksActive = currentView === 'items' || currentView === 'detail';
+  const isTeamsActive = currentView === 'teams';
+  const isNotificationsActive = currentView === 'settings' && activeSettingsTab === 'notifications';
+  const isAssistantActive = currentView === 'assistant';
+  const isSettingsActive = currentView === 'settings' && activeSettingsTab !== 'notifications';
+
+  // Breadcrumb title calculation
+  const getHeaderTitle = () => {
+    if (currentView === 'dashboard') return 'Dashboard';
+    if (currentView === 'items') return 'My Tasks';
+    if (currentView === 'detail') return 'Task Details';
+    if (currentView === 'teams') return 'Team Directory & Personnel';
+    if (currentView === 'assistant') return 'AI Operations Assistant';
+    if (currentView === 'settings') {
+      if (activeSettingsTab === 'notifications') return 'Notifications & SLA Alerts';
+      if (activeSettingsTab === 'email') return 'Communication & Email Relay';
+      return 'System Settings';
+    }
+    return 'Operations';
+  };
+
+  const navItemStyle = (isActive: boolean): React.CSSProperties => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    padding: '0.625rem 0.85rem',
+    borderRadius: 'var(--radius-sm)',
+    fontSize: '0.85rem',
+    fontWeight: isActive ? 650 : 500,
+    backgroundColor: isActive ? 'var(--primary-blue-light)' : 'transparent',
+    color: isActive ? 'var(--primary-blue)' : 'var(--text-muted)',
+    border: 'none',
+    borderLeft: isActive ? '3px solid var(--primary-blue)' : '3px solid transparent',
+    transition: 'all 0.15s ease-in-out',
+    textAlign: 'left',
+  });
 
   return (
     <div
@@ -48,15 +253,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       {/* Left Sidebar */}
       <aside
         style={{
-          width: '260px',
-          minWidth: '260px',
-          maxWidth: '260px',
+          width: '264px',
+          minWidth: '264px',
+          maxWidth: '264px',
           backgroundColor: 'var(--bg-sidebar)',
           borderRight: '1px solid var(--border-color)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          padding: '1.25rem 1rem',
+          padding: '1.25rem 1rem 1rem 1rem',
           height: '100vh',
           maxHeight: '100vh',
           overflowY: 'auto',
@@ -69,8 +274,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.65rem',
-              padding: '0.25rem 0.5rem 1.5rem',
+              gap: '0.75rem',
+              padding: '0.25rem 0.35rem 1.25rem 0.35rem',
             }}
           >
             {logoUrl ? (
@@ -78,18 +283,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 src={logoUrl}
                 alt="App Logo"
                 style={{
-                  width: '36px',
-                  height: '36px',
+                  width: '38px',
+                  height: '38px',
                   borderRadius: '10px',
                   objectFit: 'contain',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.25)',
                 }}
               />
             ) : (
               <div
                 style={{
-                  width: '36px',
-                  height: '36px',
+                  width: '38px',
+                  height: '38px',
                   borderRadius: '10px',
                   backgroundColor: 'var(--primary-blue)',
                   color: '#fff',
@@ -98,183 +303,157 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                   justifyContent: 'center',
                   fontWeight: 800,
                   fontSize: '1.2rem',
-                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)',
+                  boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.25)',
                 }}
               >
                 ⚙
               </div>
             )}
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
-                  fontSize: '1.15rem',
+                  fontSize: '1.1rem',
                   fontWeight: 800,
                   letterSpacing: '-0.02em',
                   color: 'var(--text-main)',
                   lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
                 {appName || 'Newtonite Ops'}
               </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                Operations Under Pressure
+              <div
+                style={{
+                  fontSize: '0.7rem',
+                  fontWeight: 500,
+                  color: 'var(--text-muted)',
+                  marginTop: '2px',
+                }}
+              >
+                Operations Platform
               </div>
             </div>
           </div>
 
-          {/* Primary Navigation Menu */}
+          {/* Primary Action Button: + New Work Item */}
+          <button
+            id="nav-quick-create"
+            onClick={onOpenCreate}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.55rem',
+              width: '100%',
+              padding: '0.625rem 1rem',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '0.85rem',
+              fontWeight: 650,
+              backgroundColor: 'var(--primary-blue)',
+              color: '#ffffff',
+              boxShadow: '0 2px 6px -1px rgba(37, 99, 235, 0.35)',
+              transition: 'all 0.15s ease',
+              marginBottom: '1.25rem',
+            }}
+          >
+            <IconPlus size={16} />
+            <span>New Work Item</span>
+          </button>
+
+          {/* Main Navigation Menu */}
           <nav
             style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.35rem',
-              marginBottom: '2rem',
+              gap: '0.25rem',
+              marginBottom: '1.5rem',
             }}
           >
+            {/* 1. Dashboard */}
             <button
               id="nav-dashboard"
-              onClick={() => setCurrentView('dashboard')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.65rem 0.85rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.875rem',
-                fontWeight: currentView === 'dashboard' ? 700 : 500,
-                backgroundColor:
-                  currentView === 'dashboard' ? 'var(--primary-blue)' : 'transparent',
-                color: currentView === 'dashboard' ? '#ffffff' : 'var(--text-muted)',
-                textAlign: 'left',
-              }}
+              onClick={handleNavDashboard}
+              style={navItemStyle(isDashboardActive)}
             >
-              <span>📊</span>
-              <span>Operations Dashboard</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <IconDashboard />
+                <span>Dashboard</span>
+              </div>
             </button>
 
+            {/* 2. My Tasks */}
             <button
               id="nav-work-items"
-              onClick={() => setCurrentView('items')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.65rem 0.85rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.875rem',
-                fontWeight: currentView === 'items' || currentView === 'detail' ? 700 : 500,
-                backgroundColor:
-                  currentView === 'items' || currentView === 'detail'
-                    ? 'var(--primary-blue)'
-                    : 'transparent',
-                color:
-                  currentView === 'items' || currentView === 'detail'
-                    ? '#ffffff'
-                    : 'var(--text-muted)',
-                textAlign: 'left',
-              }}
+              onClick={handleNavTasks}
+              style={navItemStyle(isTasksActive)}
             >
-              <span>📋</span>
-              <span>Work Items Registry</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <IconTasks />
+                <span>My Task</span>
+              </div>
             </button>
 
+            {/* 3. Team List */}
+            <button id="nav-team-list" onClick={handleNavTeams} style={navItemStyle(isTeamsActive)}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <IconTeams />
+                <span>Team List</span>
+              </div>
+            </button>
+
+            {/* 4. Notification */}
+            <button
+              id="nav-notifications"
+              onClick={handleNavNotifications}
+              style={navItemStyle(isNotificationsActive)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <IconNotification />
+                <span>Notification</span>
+              </div>
+            </button>
+
+            {/* 6. AI Operations Assistant */}
+            <button
+              id="nav-assistant"
+              onClick={handleNavAssistant}
+              style={navItemStyle(isAssistantActive)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <IconAssistant />
+                <span>AI Assistant</span>
+              </div>
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  backgroundColor: isAssistantActive ? 'var(--primary-blue)' : '#e0e7ff',
+                  color: isAssistantActive ? '#ffffff' : '#3730a3',
+                  padding: '0.15rem 0.45rem',
+                  borderRadius: 'var(--radius-full)',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                PRO
+              </span>
+            </button>
+
+            {/* 7. Setting */}
             {userRole === 'ADMIN' && (
               <button
                 id="nav-settings"
-                onClick={() => setCurrentView('settings')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  padding: '0.65rem 0.85rem',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.875rem',
-                  fontWeight: currentView === 'settings' ? 750 : 500,
-                  backgroundColor:
-                    currentView === 'settings' ? 'var(--primary-blue)' : 'transparent',
-                  color: currentView === 'settings' ? '#ffffff' : 'var(--text-muted)',
-                  textAlign: 'left',
-                }}
+                onClick={handleNavSettings}
+                style={navItemStyle(isSettingsActive)}
               >
-                <span>⚙️</span>
-                <span>System Settings</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <IconSettings />
+                  <span>Setting</span>
+                </div>
               </button>
             )}
-
-            <button
-              id="nav-quick-create"
-              onClick={onOpenCreate}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.65rem 0.85rem',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                backgroundColor: 'transparent',
-                color: 'var(--primary-blue)',
-                textAlign: 'left',
-                marginTop: '0.25rem',
-              }}
-            >
-              <span>➕</span>
-              <span>New Work Item</span>
-            </button>
           </nav>
-
-          {/* Persona Switcher Section */}
-          <div
-            style={{
-              backgroundColor: 'var(--bg-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: '0.85rem',
-              border: '1px solid var(--border-color)',
-              marginBottom: '1rem',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '0.675rem',
-                fontWeight: 750,
-                textTransform: 'uppercase',
-                color: 'var(--text-subtle)',
-                letterSpacing: '0.05em',
-                marginBottom: '0.5rem',
-              }}
-            >
-              Active Persona (RBAC)
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              {DEMO_PERSONAS.map((p) => {
-                const isActive = currentUser?.email === p.email;
-                return (
-                  <button
-                    key={p.email}
-                    id={`btn-persona-${p.role.toLowerCase()}`}
-                    onClick={() => void switchPersona(p.email)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '0.4rem 0.55rem',
-                      borderRadius: '6px',
-                      fontSize: '0.775rem',
-                      backgroundColor: isActive ? '#ffffff' : 'transparent',
-                      color: isActive ? 'var(--primary-blue)' : 'var(--text-main)',
-                      fontWeight: isActive ? 750 : 500,
-                      border: isActive ? '1px solid var(--border-color)' : '1px solid transparent',
-                      boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
-                    }}
-                  >
-                    <span>{p.name}</span>
-                    <RoleBadge role={p.role} />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* User Profile & Logout Footer */}
@@ -287,7 +466,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             justifyContent: 'space-between',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem',
+              minWidth: 0,
+              maxWidth: '170px',
+            }}
+          >
             <div
               style={{
                 width: '34px',
@@ -301,22 +488,34 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 border: '1px solid #bfdbfe',
+                flexShrink: 0,
               }}
             >
               {currentUser?.name.charAt(0) || 'U'}
             </div>
-            <div>
+            <div style={{ minWidth: 0, overflow: 'hidden' }}>
               <div
                 style={{
                   fontSize: '0.825rem',
                   fontWeight: 750,
                   color: 'var(--text-main)',
                   lineHeight: 1.2,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
                 {currentUser?.name || 'User'}
               </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+              <div
+                style={{
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
                 {userRole} • {teamName}
               </div>
             </div>
@@ -334,9 +533,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               fontSize: '0.75rem',
               color: 'var(--text-muted)',
               fontWeight: 650,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.3rem',
             }}
           >
-            Logout
+            <span>Exit</span>
           </button>
         </div>
       </aside>
@@ -363,7 +565,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '1rem 2rem',
+            padding: '0.875rem 2rem',
             backgroundColor: '#ffffff',
             borderBottom: '1px solid var(--border-color)',
           }}
@@ -372,17 +574,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           <div
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}
           >
-            <span style={{ color: 'var(--text-subtle)' }}>Newtonite Ops</span>
+            <span style={{ color: 'var(--text-subtle)' }}>{appName || 'Newtonite Ops'}</span>
             <span style={{ color: 'var(--text-subtle)' }}>/</span>
-            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-              {currentView === 'dashboard'
-                ? 'Operations Dashboard'
-                : currentView === 'items'
-                  ? 'Work Items Registry'
-                  : currentView === 'settings'
-                    ? 'Settings & Configuration'
-                    : 'Work Item Detail'}
-            </span>
+            <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{getHeaderTitle()}</span>
           </div>
 
           {/* Right Header Badges & Actions */}
